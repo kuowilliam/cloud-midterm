@@ -1,0 +1,47 @@
+version: "3.9"
+services:
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+  controller:
+    build: ./controller
+    container_name: controller
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    volumes:
+      - ./data:/data
+
+  worker1:
+    build: ./worker
+    container_name: worker1
+    depends_on:
+      - redis
+    volumes:
+      - ./data:/data
+    environment:
+      - WORKER_NAME=worker1
+
+  worker2:
+    build: ./worker
+    container_name: worker2
+    depends_on:
+      - redis
+    volumes:
+      - ./data:/data
+    environment:
+      - WORKER_NAME=worker2
+
+  worker3:
+    build: ./worker
+    container_name: worker3
+    depends_on:
+      - redis
+    volumes:
+      - ./data:/data
+    environment:
+      - WORKER_NAME=worker3
