@@ -56,7 +56,8 @@ def get_status():
     processing_items = list(redis.smembers(PROCESSING_SET))
     done_items = list(redis.smembers(DONE_SET))
     # 列表資訊
-    queued_items = redis.lrange(QUEUE, 0, -1)
+    queued_raw = redis.lrange(QUEUE, 0, -1)
+    queued_items = [{"item": item, "delete_url": f"/queue/{item}"} for item in queued_raw]
 
     # 錯誤與重試資訊
     errors = {}
@@ -100,6 +101,7 @@ class SearchQuery(BaseModel):
 
 @app.post("/search")
 def search(query: SearchQuery):
+    # 確認資料存在
     if not os.path.exists(META_PATH):
         raise HTTPException(status_code=400, detail="Metadata file not found")
     if not os.path.exists(INDEX_PATH):
@@ -154,13 +156,3 @@ def reset_system():
     for key in redis.keys("retry:*"):
         redis.delete(key)
     return {"message": "System reset completed."}
-
-@app.post("/requeue_stuck")
-def requeue_stuck_images():
-    items = list(redis.smembers(PROCESSING_SET))
-    count = 0
-    for item in items:
-        redis.srem(PROCESSING_SET, item)
-        redis.lpush(QUEUE, item)
-        count += 1
-    return {"message": f"Requeued {count} stuck images."}

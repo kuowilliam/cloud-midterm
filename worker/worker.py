@@ -33,7 +33,7 @@ caption_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-caption
 caption_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(device)
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-# 初始化 metadata 和 index
+# 載入 metadata 和 index
 if os.path.exists(META_PATH):
     with open(META_PATH, "r", encoding="utf-8") as f:
         metadata = json.load(f)
@@ -59,16 +59,15 @@ def publish_metrics():
         try:
             redis.hset(METRICS_HASH, WORKER_NAME, json.dumps(data))
         except Exception:
-            # 如有錯誤就打印，但不影響主循環
             print(f"⚠️ Failed to publish metrics: {traceback.format_exc()}")
-        time.sleep(4)  # 剩餘時間睡眠
+        time.sleep(2)  # 剩餘時間睡眠
 
 # 啟動 metrics thread
 Thread(target=publish_metrics, daemon=True).start()
 
 print(f"Worker '{WORKER_NAME}' started on {device} device")
 
-# 主循環：處理任務
+# 不停循環從 redis 的 image_queue 拿任務出來做
 while True:
     try:
         image_path = redis.rpop(QUEUE)
@@ -90,7 +89,7 @@ while True:
 
             image = Image.open(full_path).convert("RGB")
 
-            # 生成描述
+            # 用 BLIP 生 caption
             inputs = caption_processor(image, return_tensors="pt").to(device)
             out = caption_model.generate(**inputs, max_length=50)
             caption = caption_processor.decode(out[0], skip_special_tokens=True)
@@ -100,6 +99,12 @@ while True:
 
             # 加鎖寫 metadata 和 FAISS
             with redis.lock("write_lock", timeout=10):
+                """
+                worker 拿到鎖之後
+                馬上讀「現在最新磁碟上的 metadata.json、index」
+                基於最新版本去加自己的新資料
+                以免覆蓋掉其他 worker 的資料
+                """
                 # 讀 metadata
                 if os.path.exists(META_PATH):
                     with open(META_PATH, "r", encoding="utf-8") as f:
