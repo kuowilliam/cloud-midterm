@@ -3,13 +3,31 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
-import zipfile, os, json, shutil
+import zipfile, os, json, shutil, threading, time
 from redis import Redis
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+# 監控與回收設定常數
+HEARTBEAT_PREFIX      = "heartbeat:"
+PROCESSING_TS_PREFIX  = "processing_ts:"
+PROCESSING_TIMEOUT    = 30   
+MONITOR_INTERVAL      = 5
+
+# 要監控的 worker 名稱清單
+WORKER_NAMES = ["worker1", "worker2", "worker3"]
+
+# 定義 lifespan 以接管啟動時行為
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 啟動背景監控 thread
+    t = threading.Thread(target=monitor_loop, daemon=True)
+    t.start()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,6 +49,46 @@ META_PATH = os.path.join(DATA_DIR, "metadata.json")
 INDEX_PATH = os.path.join(DATA_DIR, "index_file.index")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
+class SearchQuery(BaseModel):
+    query: str
+    top_k: Optional[int] = 5
+
+# 偵測死掉節點 & 超時任務回收
+def monitor_loop():
+    while True:
+        now = time.time()
+        # 1) Dead worker 檢測
+        active = redis.smembers("active_workers")
+        for worker in active:
+            if not redis.exists(HEARTBEAT_PREFIX + worker):
+                # 該 worker 死掉，回收其 processing 中的任務
+                proc_map = redis.hgetall("processing_workers")
+                requeued = []
+                for item, w in proc_map.items():
+                    if w == worker:
+                        redis.srem(PROCESSING_SET, item)
+                        redis.hdel("processing_workers", item)
+                        redis.lpush(QUEUE, item)
+                        requeued.append(item)
+                # 記錄事件, ts: 發生時間
+                event = {"ts": now, "type": "worker_dead", "worker": worker, "requeued": requeued}
+                redis.lpush("monitor_events", json.dumps(event))
+                # 從 active_workers 中移除
+                redis.srem("active_workers", worker)
+        # 2) Timeout 任務檢測
+        for item in redis.smembers(PROCESSING_SET):
+            ts_key = PROCESSING_TS_PREFIX + item
+            ts = redis.get(ts_key)
+            if ts and now - float(ts) > PROCESSING_TIMEOUT:
+                redis.srem(PROCESSING_SET, item)
+                redis.hdel("processing_workers", item)
+                redis.delete(ts_key)
+                redis.lpush(QUEUE, item)
+                # 記錄事件
+                event = {"ts": now, "type": "task_timeout", "item": item}
+                redis.lpush("monitor_events", json.dumps(event))
+        time.sleep(MONITOR_INTERVAL)
+
 @app.post("/upload")
 def upload_zip(zip_file: UploadFile = File(...)):
     zip_path = os.path.join(UPLOAD_DIR, zip_file.filename)
@@ -42,7 +100,6 @@ def upload_zip(zip_file: UploadFile = File(...)):
     count = 0
     for root, _, files in os.walk(UPLOAD_DIR):
         for fname in files:
-            # 支援 .jpg, .jpeg, .png 三種格式
             if fname.lower().endswith((".jpg", ".jpeg", ".png")):
                 relative_path = os.path.relpath(os.path.join(root, fname), DATA_DIR)
                 redis.lpush(QUEUE, relative_path)
@@ -73,19 +130,40 @@ def get_status():
 
     # 節點映射與資源使用
     processing_workers = redis.hgetall("processing_workers")
-    node_metrics_raw = redis.hgetall("node_metrics")
-    node_metrics = {node: json.loads(v) for node, v in node_metrics_raw.items()}
 
     return {
         "queue": queue_count,
         "queued_items": queued_items,
         "processing": processing_items,
+        "processing_workers": processing_workers,
         "done": done_items,
         "errors": errors,
-        "retries": retries,
-        "processing_workers": processing_workers,
-        "node_metrics": node_metrics
+        "retries": retries
     }
+
+@app.get("/monitor/worker")
+def get_worker_status():
+    """
+    回傳所有預定 worker 的健康狀態與 metrics。
+    dead 狀態時不顯示 metrics。
+    """
+    raw_metrics = redis.hgetall("node_metrics")
+    statuses = {}
+    for w in WORKER_NAMES:
+        heartbeat_key = HEARTBEAT_PREFIX + w
+        if redis.exists(heartbeat_key):
+            metrics_json = raw_metrics.get(w)
+            metrics = json.loads(metrics_json) if metrics_json else {}
+            statuses[w] = {"status": "health", "metrics": metrics}
+        else:
+            statuses[w] = {"status": "dead"}
+    return {"workers": statuses}
+
+@app.get("/monitor/events")
+def get_monitor_events(limit: int = 50):
+    raw = redis.lrange("monitor_events", 0, limit - 1)
+    events = [json.loads(item) for item in raw]
+    return {"events": events}
 
 @app.delete("/queue/{item}")
 def delete_queued_item(item: str):
@@ -94,10 +172,6 @@ def delete_queued_item(item: str):
     if removed == 0:
         raise HTTPException(status_code=404, detail=f"Item {item} not found in queue")
     return {"message": f"Removed {removed} occurrence(s) of {item} from queue."}
-
-class SearchQuery(BaseModel):
-    query: str
-    top_k: Optional[int] = 5
 
 @app.post("/search")
 def search(query: SearchQuery):

@@ -1,4 +1,4 @@
-import os, time, json, traceback
+import os, time, json, traceback, atexit
 from threading import Thread
 import psutil
 from redis import Redis
@@ -16,6 +16,7 @@ WORKER_NAME = os.getenv("WORKER_NAME", "unknown")
 UPLOAD_DIR = "/data/uploads"
 META_PATH = "/data/metadata.json"
 INDEX_PATH = "/data/index_file.index"
+
 QUEUE = "image_queue"
 PROCESSING_SET = "processing_set"
 DONE_SET = "done_set"
@@ -23,8 +24,18 @@ DONE_SET = "done_set"
 # Metrics Hash 名稱
 METRICS_HASH = "node_metrics"
 
+HEARTBEAT_KEY     = f"heartbeat:{WORKER_NAME}"
+HEARTBEAT_EXPIRE  = 10    # 心跳 key 過期時間 (秒)
+HEARTBEAT_INTERVAL= 5     # 心跳更新間隔 (秒)
+
 # 連線 Redis
 redis = Redis(host="redis", port=6379, decode_responses=True)
+
+# 將自己註冊到 active_workers set 裡，監控程式可用來知道哪些節點上線
+redis.sadd("active_workers", WORKER_NAME)
+def on_exit():
+    redis.srem("active_workers", WORKER_NAME)
+atexit.register(on_exit)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -45,8 +56,11 @@ else:
     dim = embedder.get_sentence_embedding_dimension()
     index = faiss.IndexFlatL2(dim)
 
-# 處理超時秒數（保留擴充用）
-PROCESSING_TIMEOUT = 60
+def publish_heartbeat():
+    while True:
+        # 每 HEARTBEAT_INTERVAL 秒更新一次，並設定自動過期
+        redis.set(HEARTBEAT_KEY, time.time(), ex=HEARTBEAT_EXPIRE)
+        time.sleep(HEARTBEAT_INTERVAL)
 
 # Metrics 上報：定期將 CPU% 與 Memory% 寫入 Redis hash
 def publish_metrics():
@@ -62,7 +76,8 @@ def publish_metrics():
             print(f"⚠️ Failed to publish metrics: {traceback.format_exc()}")
         time.sleep(2)  # 剩餘時間睡眠
 
-# 啟動 metrics thread
+# 啟動背景thread
+Thread(target=publish_heartbeat, daemon=True).start()
 Thread(target=publish_metrics, daemon=True).start()
 
 print(f"Worker '{WORKER_NAME}' started on {device} device")
@@ -74,22 +89,24 @@ while True:
         if not image_path:
             time.sleep(1)
             continue
-
+        
+        # 記錄「任務開始時間」，並寫入 processing timestamp
+        start_time = time.time()
+        redis.set(f"processing_ts:{image_path}", start_time)
+        
         print(f"🔄 Processing image: {image_path} by {WORKER_NAME}")
 
         # 標記處理中並記錄是哪一台
         redis.sadd(PROCESSING_SET, image_path)
         redis.hset("processing_workers", image_path, WORKER_NAME)
-        start_time = time.time()
+        
         full_path = os.path.join("/data", image_path)
-
         try:
             if not os.path.exists(full_path) or not os.path.isfile(full_path):
                 raise FileNotFoundError(f"File not found: {full_path}")
 
-            image = Image.open(full_path).convert("RGB")
-
             # 用 BLIP 生 caption
+            image = Image.open(full_path).convert("RGB")
             inputs = caption_processor(image, return_tensors="pt").to(device)
             out = caption_model.generate(**inputs, max_length=50)
             caption = caption_processor.decode(out[0], skip_special_tokens=True)
@@ -107,8 +124,7 @@ while True:
                 """
                 # 讀 metadata
                 if os.path.exists(META_PATH):
-                    with open(META_PATH, "r", encoding="utf-8") as f:
-                        metadata = json.load(f)
+                    metadata = json.load(open(META_PATH, "r", encoding="utf-8"))
                 else:
                     metadata = []
 
@@ -124,27 +140,29 @@ while True:
                     "filename": image_path,
                     "caption": caption
                 })
-                with open(META_PATH, "w", encoding="utf-8") as f:
-                    json.dump(metadata, f, ensure_ascii=False, indent=2)
+                json.dump(metadata, open(META_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
                 # 更新 FAISS
                 index.add(np.array([vec]))
                 faiss.write_index(index, INDEX_PATH)
 
             # 處理完成：移除 processing 記錄、加入 done 並清 processing_workers
+            redis.delete(f"processing_ts:{image_path}")
             redis.srem(PROCESSING_SET, image_path)
             redis.hdel("processing_workers", image_path)
             redis.sadd(DONE_SET, image_path)
 
-            processing_time = time.time() - start_time
-            print(f"✅ {WORKER_NAME} processed {image_path} in {processing_time:.2f}s: {caption}")
+            elapsed = time.time() - start_time
+            print(f"✅ {WORKER_NAME} done {image_path} in {elapsed:.2f}s: {caption}")
 
         except Exception as e:
+            # 處理失敗：清處理時間，記錄 error，並做一次 retry
             error_msg = f"❌ Error processing {image_path} by {WORKER_NAME}: {str(e)}"
             print(error_msg)
             print(traceback.format_exc())
 
             # 清理 processing set
+            redis.delete(f"processing_ts:{image_path}")
             redis.srem(PROCESSING_SET, image_path)
             redis.set(f"error:{image_path}", error_msg)
 
