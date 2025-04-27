@@ -1,5 +1,5 @@
 import React from 'react';
-import { Grid, Typography, Container, Divider } from '@mui/material';
+import { Grid, Typography, Box, Divider } from '@mui/material';
 import AppLayout from '../components/Layout/AppLayout';
 import UploadSection from '../components/UploadSection';
 import QueueSection from '../components/QueueSection';
@@ -11,7 +11,18 @@ import EventMonitorSection from '../components/EventMonitorSection';
 function Dashboard() {
   return (
     <AppLayout>
-      <Container maxWidth="xl">
+      <Box sx={{ width: '30%', pr: 2, overflowY: 'auto', height: 'calc(100vh - 100px)' }}>
+        {/* Left Column - Worker Health and Event Monitor */}
+        <Typography variant="h6" gutterBottom>
+          System Monitoring
+        </Typography>
+        <Divider sx={{ mb: 2 }} />
+        <WorkerHealthSection />
+        <EventMonitorSection />
+      </Box>
+      
+      <Box sx={{ width: '70%', pl: 2, overflowY: 'auto', height: 'calc(100vh - 100px)' }}>
+        {/* Right Column - Everything else */}
         <Typography variant="h4" component="h1" gutterBottom>
           Worker Administration Dashboard
         </Typography>
@@ -28,25 +39,19 @@ function Dashboard() {
           Monitoring & Management
         </Typography>
         
-        {/* Queue, Processing, and Done Sections */}
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
+        {/* Queue, Processing, and Done Sections - Vertical Layout */}
+        <Grid container spacing={3} direction="column">
+          <Grid item xs={12}>
             <QueueSection />
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12}>
             <ProcessingSection />
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12}>
             <DoneSection />
           </Grid>
         </Grid>
-        
-        {/* Worker Health Section */}
-        <WorkerHealthSection />
-        
-        {/* Event Monitor Section */}
-        <EventMonitorSection />
-      </Container>
+      </Box>
     </AppLayout>
   );
 }

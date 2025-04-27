@@ -39,8 +39,8 @@ function QueueSection() {
   };
 
   if (isLoading) {
-    return (
-      <Card sx={{ mb: 4 }}>
+  return (
+    <Card id="queue-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Queue" 
           subheader="Images waiting to be processed"
@@ -61,7 +61,7 @@ function QueueSection() {
 
   if (error) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="queue-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Queue" 
           subheader="Images waiting to be processed"
@@ -84,7 +84,7 @@ function QueueSection() {
   const queueCount = data?.queue || 0;
 
   return (
-    <Card sx={{ mb: 4 }}>
+    <Card id="queue-section" sx={{ mb: 4 }}>
       <CardHeader 
         title={`Queue (${queueCount})`}
         subheader="Images waiting to be processed"

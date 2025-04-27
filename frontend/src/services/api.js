@@ -58,6 +58,11 @@ export const resetSystem = async () => {
   return response.data;
 };
 
+export const getDoneImages = async () => {
+  const response = await api.get('/done');
+  return response.data;
+};
+
 export default {
   uploadZip,
   getStatus,
@@ -67,4 +72,5 @@ export default {
   searchImages,
   getImageUrl,
   resetSystem,
+  getDoneImages,
 };

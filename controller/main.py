@@ -13,8 +13,8 @@ from contextlib import asynccontextmanager
 # 監控與回收設定常數
 HEARTBEAT_PREFIX      = "heartbeat:"
 PROCESSING_TS_PREFIX  = "processing_ts:"
-PROCESSING_TIMEOUT    = 30   
-MONITOR_INTERVAL      = 5
+PROCESSING_TIMEOUT    = 20
+MONITOR_INTERVAL      = 1
 
 # 要監控的 worker 名稱清單
 WORKER_NAMES = ["worker1", "worker2", "worker3"]
@@ -165,9 +165,8 @@ def get_monitor_events(limit: int = 50):
     events = [json.loads(item) for item in raw]
     return {"events": events}
 
-@app.delete("/queue/{item}")
+@app.delete("/queue/{item:path}")
 def delete_queued_item(item: str):
-    # 從佇列中刪除指定項目
     removed = redis.lrem(QUEUE, 0, item)
     if removed == 0:
         raise HTTPException(status_code=404, detail=f"Item {item} not found in queue")
@@ -230,3 +229,11 @@ def reset_system():
     for key in redis.keys("retry:*"):
         redis.delete(key)
     return {"message": "System reset completed."}
+
+@app.get("/done")
+def list_done_images():
+    """
+    回傳所有已完成處理的圖片清單。
+    """
+    done_items = list(redis.smembers(DONE_SET))
+    return {"done_images": done_items}

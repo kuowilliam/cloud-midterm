@@ -28,7 +28,7 @@ function DoneSection() {
 
   if (isLoading) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="done-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Done" 
           subheader="Processed images"
@@ -49,7 +49,7 @@ function DoneSection() {
 
   if (error) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="done-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Done" 
           subheader="Processed images"
@@ -73,7 +73,7 @@ function DoneSection() {
   const retries = data?.retries || {};
 
   return (
-    <Card sx={{ mb: 4 }}>
+    <Card id="done-section" sx={{ mb: 4 }}>
       <CardHeader 
         title={`Done (${doneItems.length})`}
         subheader="Processed images"

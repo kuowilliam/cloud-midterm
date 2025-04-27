@@ -17,12 +17,12 @@ function WorkerHealthSection() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['workerStatus'],
     queryFn: getWorkerStatus,
-    refetchInterval: 5000, // Refresh every 5 seconds
+    refetchInterval: 1000, // Refresh every 5 seconds
   });
 
   if (isLoading) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="worker-health-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Worker Health" 
           subheader="Status and metrics of worker nodes"
@@ -43,7 +43,7 @@ function WorkerHealthSection() {
 
   if (error) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="worker-health-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Worker Health" 
           subheader="Status and metrics of worker nodes"
@@ -66,7 +66,7 @@ function WorkerHealthSection() {
   const workerNames = Object.keys(workers);
 
   return (
-    <Card sx={{ mb: 4 }}>
+    <Card id="worker-health-section" sx={{ mb: 4 }}>
       <CardHeader 
         title="Worker Health" 
         subheader="Status and metrics of worker nodes"

@@ -1,12 +1,12 @@
 import React from 'react';
-import { Typography, Container, Divider } from '@mui/material';
+import { Typography, Box, Divider } from '@mui/material';
 import AppLayout from '../components/Layout/AppLayout';
 import SearchSection from '../components/SearchSection';
 
 function Search() {
   return (
     <AppLayout>
-      <Container maxWidth="xl">
+      <Box sx={{ width: '100%', overflowY: 'auto', height: 'calc(100vh - 100px)' }}>
         <Typography variant="h4" component="h1" gutterBottom>
           Image Search
         </Typography>
@@ -18,7 +18,7 @@ function Search() {
         
         {/* Search Section */}
         <SearchSection />
-      </Container>
+      </Box>
     </AppLayout>
   );
 }

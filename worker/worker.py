@@ -25,14 +25,17 @@ DONE_SET = "done_set"
 METRICS_HASH = "node_metrics"
 
 HEARTBEAT_KEY     = f"heartbeat:{WORKER_NAME}"
-HEARTBEAT_EXPIRE  = 10    # 心跳 key 過期時間 (秒)
-HEARTBEAT_INTERVAL= 5     # 心跳更新間隔 (秒)
+HEARTBEAT_EXPIRE  = 3    # 心跳 key 過期時間 (秒)
+HEARTBEAT_INTERVAL= 1     # 心跳更新間隔 (秒)
 
 # 連線 Redis
 redis = Redis(host="redis", port=6379, decode_responses=True)
 
 # 將自己註冊到 active_workers set 裡，監控程式可用來知道哪些節點上線
 redis.sadd("active_workers", WORKER_NAME)
+# 重新開機就馬上送出第一顆心跳
+redis.set(HEARTBEAT_KEY, time.time(), ex=HEARTBEAT_EXPIRE)
+
 def on_exit():
     redis.srem("active_workers", WORKER_NAME)
 atexit.register(on_exit)

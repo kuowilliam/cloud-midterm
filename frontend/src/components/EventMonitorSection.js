@@ -19,12 +19,12 @@ function EventMonitorSection() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['monitorEvents'],
     queryFn: () => getMonitorEvents(20), // Get last 20 events
-    refetchInterval: 5000, // Refresh every 5 seconds
+    refetchInterval: 1000, // Refresh every 5 seconds
   });
 
   if (isLoading) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="event-monitor-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Event Monitor" 
           subheader="Recent system events"
@@ -45,7 +45,7 @@ function EventMonitorSection() {
 
   if (error) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="event-monitor-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Event Monitor" 
           subheader="Recent system events"
@@ -67,7 +67,7 @@ function EventMonitorSection() {
   const events = data?.events || [];
 
   return (
-    <Card sx={{ mb: 4 }}>
+    <Card id="event-monitor-section" sx={{ mb: 4 }}>
       <CardHeader 
         title={`Event Monitor (${events.length})`}
         subheader="Recent system events"

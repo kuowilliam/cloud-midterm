@@ -5,47 +5,33 @@ import {
   Box,
   CssBaseline,
   Divider,
-  Drawer,
-  IconButton,
-  List,
-  ListItem,
-  ListItemButton,
   ListItemIcon,
   ListItemText,
   Toolbar,
   Typography,
   Button,
+  Menu,
+  MenuItem,
 } from '@mui/material';
 import {
-  Menu as MenuIcon,
   Dashboard as DashboardIcon,
   Search as SearchIcon,
-  CloudUpload as CloudUploadIcon,
   Refresh as RefreshIcon,
+  KeyboardArrowDown as KeyboardArrowDownIcon,
 } from '@mui/icons-material';
 import { resetSystem } from '../../services/api';
 
-const drawerWidth = 240;
-
 function AppLayout({ children }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
-
-  const handleDrawerClose = () => {
-    setIsClosing(true);
-    setMobileOpen(false);
+  
+  const handleMenuOpen = (event) => {
+    setAnchorEl(event.currentTarget);
   };
 
-  const handleDrawerTransitionEnd = () => {
-    setIsClosing(false);
-  };
-
-  const handleDrawerToggle = () => {
-    if (!isClosing) {
-      setMobileOpen(!mobileOpen);
-    }
+  const handleMenuClose = () => {
+    setAnchorEl(null);
   };
 
   const handleReset = async () => {
@@ -59,131 +45,87 @@ function AppLayout({ children }) {
         alert('Failed to reset system');
       }
     }
+    handleMenuClose();
   };
 
-  const menuItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
-    { text: 'Search', icon: <SearchIcon />, path: '/search' },
-  ];
-
-  const drawer = (
-    <div>
-      <Toolbar>
-        <Typography variant="h6" noWrap component="div">
-          Worker Admin
-        </Typography>
-      </Toolbar>
-      <Divider />
-      <List>
-        {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
-            <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => {
-                navigate(item.path);
-                if (mobileOpen) {
-                  handleDrawerClose();
-                }
-              }}
-            >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
-      <Divider />
-      <Box sx={{ p: 2 }}>
-        <Button
-          variant="outlined"
-          color="error"
-          startIcon={<RefreshIcon />}
-          onClick={handleReset}
-          fullWidth
-        >
-          Reset System
-        </Button>
-      </Box>
-    </div>
-  );
-
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <CssBaseline />
-      <AppBar
-        position="fixed"
-        sx={{
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          ml: { sm: `${drawerWidth}px` },
-        }}
-      >
+      <AppBar position="fixed">
         <Toolbar>
-          <IconButton
+          <Button
             color="inherit"
-            aria-label="open drawer"
-            edge="start"
-            onClick={handleDrawerToggle}
-            sx={{ mr: 2, display: { sm: 'none' } }}
-          >
-            <MenuIcon />
-          </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            RAG Image Search - Worker Administrator
-          </Typography>
-          <Button 
-            color="inherit" 
-            startIcon={<CloudUploadIcon />}
-            onClick={() => {
-              const uploadSection = document.getElementById('upload-section');
-              if (uploadSection) {
-                uploadSection.scrollIntoView({ behavior: 'smooth' });
-              } else {
-                navigate('/');
+            onClick={handleMenuOpen}
+            endIcon={<KeyboardArrowDownIcon />}
+            sx={{ 
+              textTransform: 'none', 
+              fontWeight: 'bold',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
               }
             }}
           >
-            Upload
+            Worker Admin
           </Button>
+          <Menu
+            anchorEl={anchorEl}
+            open={Boolean(anchorEl)}
+            onClose={handleMenuClose}
+            anchorOrigin={{
+              vertical: 'bottom',
+              horizontal: 'left',
+            }}
+            transformOrigin={{
+              vertical: 'top',
+              horizontal: 'left',
+            }}
+          >
+            <MenuItem 
+              onClick={() => {
+                navigate('/');
+                handleMenuClose();
+              }}
+              selected={location.pathname === '/'}
+            >
+              <ListItemIcon>
+                <DashboardIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Dashboard</ListItemText>
+            </MenuItem>
+            <MenuItem 
+              onClick={() => {
+                navigate('/search');
+                handleMenuClose();
+              }}
+              selected={location.pathname === '/search'}
+            >
+              <ListItemIcon>
+                <SearchIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Search</ListItemText>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={handleReset}>
+              <ListItemIcon>
+                <RefreshIcon fontSize="small" color="error" />
+              </ListItemIcon>
+              <ListItemText sx={{ color: 'error.main' }}>Reset System</ListItemText>
+            </MenuItem>
+          </Menu>
+          
+          <Typography variant="h6" noWrap component="div" sx={{ marginLeft: 'auto' }}>
+            RAG Image Search - Worker Administrator
+          </Typography>
         </Toolbar>
       </AppBar>
-      <Box
-        component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
-        aria-label="mailbox folders"
-      >
-        <Drawer
-          variant="temporary"
-          open={mobileOpen}
-          onTransitionEnd={handleDrawerTransitionEnd}
-          onClose={handleDrawerClose}
-          ModalProps={{
-            keepMounted: true, // Better open performance on mobile.
-          }}
-          sx={{
-            display: { xs: 'block', sm: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
-          }}
-        >
-          {drawer}
-        </Drawer>
-        <Drawer
-          variant="permanent"
-          sx={{
-            display: { xs: 'none', sm: 'block' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
-          }}
-          open
-        >
-          {drawer}
-        </Drawer>
-      </Box>
       <Box
         component="main"
         sx={{
           flexGrow: 1,
           p: 3,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
           mt: '64px',
+          display: 'flex',
+          width: '100%',
         }}
       >
         {children}

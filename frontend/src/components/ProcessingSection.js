@@ -23,7 +23,7 @@ function ProcessingSection() {
 
   if (isLoading) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="processing-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Processing" 
           subheader="Images currently being processed"
@@ -44,7 +44,7 @@ function ProcessingSection() {
 
   if (error) {
     return (
-      <Card sx={{ mb: 4 }}>
+      <Card id="processing-section" sx={{ mb: 4 }}>
         <CardHeader 
           title="Processing" 
           subheader="Images currently being processed"
@@ -67,7 +67,7 @@ function ProcessingSection() {
   const processingWorkers = data?.processing_workers || {};
 
   return (
-    <Card sx={{ mb: 4 }}>
+    <Card id="processing-section" sx={{ mb: 4 }}>
       <CardHeader 
         title={`Processing (${processingItems.length})`}
         subheader="Images currently being processed"
