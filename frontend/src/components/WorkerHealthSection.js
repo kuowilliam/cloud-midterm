@@ -10,14 +10,11 @@ import {
   Paper,
   Tooltip,
 } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
-import { getWorkerStatus } from '../services/api';
+import useSSE from '../hooks/useSSE';
 
 function WorkerHealthSection() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['workerStatus'],
-    queryFn: getWorkerStatus,
-    refetchInterval: 1000, // Refresh every 5 seconds
+  const { data, isLoading, error } = useSSE('workerStatus', {
+    workers: {}
   });
 
   if (isLoading) {
@@ -62,7 +59,7 @@ function WorkerHealthSection() {
     );
   }
 
-  const workers = data?.workers || {};
+  const workers = data || {};
   const workerNames = Object.keys(workers);
 
   return (
@@ -78,8 +75,8 @@ function WorkerHealthSection() {
           },
         }}
       />
-      <CardContent>
-        <Grid container spacing={3}>
+      <CardContent sx={{ px: 3 }}>
+        <Grid container spacing={4}>
           {workerNames.length === 0 ? (
             <Grid item xs={12}>
               <Typography variant="body1" sx={{ textAlign: 'center', py: 2 }}>
@@ -93,11 +90,11 @@ function WorkerHealthSection() {
               const metrics = worker.metrics || {};
               
               return (
-                <Grid item xs={12} sm={6} md={4} key={workerName}>
+                <Grid item xs={12} sm={12} md={6} key={workerName}>
                   <Paper 
                     elevation={3} 
                     sx={{ 
-                      p: 2, 
+                      p: 3, 
                       borderTop: '4px solid',
                       borderColor: isHealthy ? 'success.main' : 'error.main',
                       height: '100%',
@@ -128,8 +125,8 @@ function WorkerHealthSection() {
                           Metrics:
                         </Typography>
                         
-                        <Grid container spacing={1}>
-                          <Grid item xs={6}>
+                        <Grid container spacing={2}>
+                          <Grid item xs={12}>
                             <Tooltip title="CPU Usage">
                               <Box>
                                 <Typography variant="body2" color="text.secondary">
@@ -147,7 +144,7 @@ function WorkerHealthSection() {
                             </Tooltip>
                           </Grid>
                           
-                          <Grid item xs={6}>
+                          <Grid item xs={12}>
                             <Tooltip title="Memory Usage">
                               <Box>
                                 <Typography variant="body2" color="text.secondary">

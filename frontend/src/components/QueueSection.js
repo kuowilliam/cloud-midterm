@@ -14,15 +14,21 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getStatus, deleteQueueItem } from '../services/api';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { deleteQueueItem } from '../services/api';
+import useSSE from '../hooks/useSSE';
 
 function QueueSection() {
   const queryClient = useQueryClient();
   
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['status'],
-    queryFn: getStatus,
+  const { data, isLoading, error } = useSSE('status', {
+    queue: 0,
+    queued_items: [],
+    processing: [],
+    processing_workers: {},
+    done: [],
+    errors: {},
+    retries: {}
   });
 
   const deleteMutation = useMutation({
@@ -81,7 +87,7 @@ function QueueSection() {
   }
 
   const queuedItems = data?.queued_items || [];
-  const queueCount = data?.queue || 0;
+  const queueCount = queuedItems.length || 0;
 
   return (
     <Card id="queue-section" sx={{ mb: 4 }}>
@@ -103,15 +109,15 @@ function QueueSection() {
           </Typography>
         ) : (
           <List sx={{ maxHeight: '300px', overflow: 'auto' }}>
-            {queuedItems.map((queueItem, index) => (
-              <React.Fragment key={`${queueItem.item}-${index}`}>
+            {queuedItems.map((item, index) => (
+              <React.Fragment key={`${item}-${index}`}>
                 <ListItem
                   secondaryAction={
                     <Tooltip title="Remove from queue">
                       <IconButton 
                         edge="end" 
                         aria-label="delete"
-                        onClick={() => handleDelete(queueItem.item)}
+                        onClick={() => handleDelete(item)}
                         disabled={deleteMutation.isPending}
                       >
                         <DeleteIcon />
@@ -126,7 +132,7 @@ function QueueSection() {
                         overflow: 'hidden',
                         textOverflow: 'ellipsis'
                       }}>
-                        {queueItem.item}
+                        {item}
                       </Box>
                     }
                   />

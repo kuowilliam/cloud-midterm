@@ -12,15 +12,10 @@ import {
   CircularProgress,
   Chip,
 } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
-import { getMonitorEvents } from '../services/api';
+import useSSE from '../hooks/useSSE';
 
 function EventMonitorSection() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['monitorEvents'],
-    queryFn: () => getMonitorEvents(20), // Get last 20 events
-    refetchInterval: 1000, // Refresh every 5 seconds
-  });
+  const { data, isLoading, error } = useSSE('monitorEvents', []);
 
   if (isLoading) {
     return (
@@ -64,7 +59,7 @@ function EventMonitorSection() {
     );
   }
 
-  const events = data?.events || [];
+  const events = data || [];
 
   return (
     <Card id="event-monitor-section" sx={{ mb: 4 }}>

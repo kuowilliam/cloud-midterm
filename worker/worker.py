@@ -25,7 +25,7 @@ DONE_SET = "done_set"
 METRICS_HASH = "node_metrics"
 
 HEARTBEAT_KEY     = f"heartbeat:{WORKER_NAME}"
-HEARTBEAT_EXPIRE  = 3    # 心跳 key 過期時間 (秒)
+HEARTBEAT_EXPIRE  = 5    # 心跳 key 過期時間 (秒)
 HEARTBEAT_INTERVAL= 1     # 心跳更新間隔 (秒)
 
 # 連線 Redis

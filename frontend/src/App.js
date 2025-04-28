@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import sseService from './services/sseService';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -49,6 +50,13 @@ const theme = createTheme({
 });
 
 function App() {
+  // Clean up SSE connections when the app unmounts
+  useEffect(() => {
+    return () => {
+      sseService.disconnectAll();
+    };
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>

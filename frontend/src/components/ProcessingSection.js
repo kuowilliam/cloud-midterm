@@ -12,13 +12,17 @@ import {
   Box,
   CircularProgress,
 } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
-import { getStatus } from '../services/api';
+import useSSE from '../hooks/useSSE';
 
 function ProcessingSection() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['status'],
-    queryFn: getStatus,
+  const { data, isLoading, error } = useSSE('status', {
+    queue: 0,
+    queued_items: [],
+    processing: [],
+    processing_workers: {},
+    done: [],
+    errors: {},
+    retries: {}
   });
 
   if (isLoading) {
