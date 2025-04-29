@@ -14,7 +14,7 @@ root/
 ├── worker/
 │   ├── Dockerfile    
 │   └── worker.py
-├── docker-compose.yaml #
+├── docker-compose.yaml #build docker image, container, volume
 ```
 ## Setup Instructions
 start entire backend system
