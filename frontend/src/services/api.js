@@ -58,12 +58,18 @@ export const resetSystem = async () => {
   return response.data;
 };
 
+export const resetMonitorEvents = async () => {
+  const response = await api.post('/monitor/events/reset');
+  return response.data;
+};
+
 export const getDoneImages = async () => {
   const response = await api.get('/done');
   return response.data;
 };
 
-export default {
+// Create an API object to export as default
+const apiService = {
   uploadZip,
   getStatus,
   deleteQueueItem,
@@ -72,5 +78,8 @@ export default {
   searchImages,
   getImageUrl,
   resetSystem,
+  resetMonitorEvents,
   getDoneImages,
 };
+
+export default apiService;

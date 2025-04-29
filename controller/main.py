@@ -14,7 +14,7 @@ from sentence_transformers import SentenceTransformer
 HEARTBEAT_PREFIX      = "heartbeat:"
 PROCESSING_TS_PREFIX  = "processing_ts:"
 PROCESSING_TIMEOUT    = 20
-MONITOR_INTERVAL      = 2  # SSE 與監控迴圈間隔
+MONITOR_INTERVAL      = 2
 SSE_PUSH_INTERVAL  = 1
 
 # 要監控的 worker 名稱清單
@@ -188,6 +188,7 @@ async def events_sse(limit: int = 50):
             await asyncio.sleep(SSE_PUSH_INTERVAL)
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+# delete 佇列中的項目
 @app.delete("/queue/{item:path}")
 def delete_queued_item(item: str):
     removed = redis.lrem(QUEUE, 0, item)
@@ -198,3 +199,12 @@ def delete_queued_item(item: str):
 @app.get("/done")
 def list_done_images():
     return {"done_images": list(redis.smembers(DONE_SET))}
+
+@app.post("/monitor/events/reset")
+def reset_monitor_events():
+    if redis.exists(MONITOR_CHANNEL):
+        redis.delete(MONITOR_CHANNEL)
+        return {"message": "Monitor events reset successfully."}
+    else:
+        return {"message": "No monitor events to reset."}
+

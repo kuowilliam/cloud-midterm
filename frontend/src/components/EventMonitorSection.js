@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Card,
   CardContent,
@@ -11,26 +11,55 @@ import {
   Box,
   CircularProgress,
   Chip,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import useSSE from '../hooks/useSSE';
+import { resetMonitorEvents } from '../services/api';
 
 function EventMonitorSection() {
   const { data, isLoading, error } = useSSE('monitorEvents', []);
+  const [resetting, setResetting] = useState(false);
+
+  const handleReset = async () => {
+    try {
+      setResetting(true);
+      await resetMonitorEvents();
+      // The SSE connection will automatically update with the new data
+    } catch (error) {
+      console.error('Error resetting monitor events:', error);
+    } finally {
+      setResetting(false);
+    }
+  };
 
   if (isLoading) {
     return (
       <Card id="event-monitor-section" sx={{ mb: 4 }}>
-        <CardHeader 
-          title="Event Monitor" 
-          subheader="Recent system events"
-          sx={{ 
-            backgroundColor: 'secondary.main', 
-            color: 'white',
-            '& .MuiCardHeader-subheader': {
-              color: 'rgba(255, 255, 255, 0.7)',
-            },
-          }}
-        />
+      <CardHeader 
+        title="Event Monitor" 
+        subheader="Recent system events"
+        action={
+          <Tooltip title="Reset Events">
+            <IconButton 
+              aria-label="reset events" 
+              onClick={handleReset}
+              disabled={resetting}
+              sx={{ color: 'white' }}
+            >
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+        }
+        sx={{ 
+          backgroundColor: 'secondary.main', 
+          color: 'white',
+          '& .MuiCardHeader-subheader': {
+            color: 'rgba(255, 255, 255, 0.7)',
+          },
+        }}
+      />
         <CardContent sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
           <CircularProgress />
         </CardContent>
@@ -44,6 +73,18 @@ function EventMonitorSection() {
         <CardHeader 
           title="Event Monitor" 
           subheader="Recent system events"
+          action={
+            <Tooltip title="Reset Events">
+              <IconButton 
+                aria-label="reset events" 
+                onClick={handleReset}
+                disabled={resetting}
+                sx={{ color: 'white' }}
+              >
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+          }
           sx={{ 
             backgroundColor: 'secondary.main', 
             color: 'white',
@@ -66,6 +107,18 @@ function EventMonitorSection() {
       <CardHeader 
         title={`Event Monitor (${events.length})`}
         subheader="Recent system events"
+        action={
+          <Tooltip title="Reset Events">
+            <IconButton 
+              aria-label="reset events" 
+              onClick={handleReset}
+              disabled={resetting}
+              sx={{ color: 'white' }}
+            >
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+        }
         sx={{ 
           backgroundColor: 'secondary.main', 
           color: 'white',

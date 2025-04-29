@@ -40,25 +40,6 @@ def on_exit():
     redis.srem("active_workers", WORKER_NAME)
 atexit.register(on_exit)
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-# 模型載入
-caption_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-caption_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(device)
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
-
-# 載入 metadata 和 index
-if os.path.exists(META_PATH):
-    with open(META_PATH, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-else:
-    metadata = []
-if os.path.exists(INDEX_PATH):
-    index = faiss.read_index(INDEX_PATH)
-else:
-    dim = embedder.get_sentence_embedding_dimension()
-    index = faiss.IndexFlatL2(dim)
-
 def publish_heartbeat():
     while True:
         # 每 HEARTBEAT_INTERVAL 秒更新一次，並設定自動過期
@@ -82,6 +63,24 @@ def publish_metrics():
 # 啟動背景thread
 Thread(target=publish_heartbeat, daemon=True).start()
 Thread(target=publish_metrics, daemon=True).start()
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+# 模型載入
+caption_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+caption_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(device)
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+# 載入 metadata 和 index
+if os.path.exists(META_PATH):
+    with open(META_PATH, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+else:
+    metadata = []
+if os.path.exists(INDEX_PATH):
+    index = faiss.read_index(INDEX_PATH)
+else:
+    dim = embedder.get_sentence_embedding_dimension()
+    index = faiss.IndexFlatL2(dim)
 
 print(f"Worker '{WORKER_NAME}' started on {device} device")
 

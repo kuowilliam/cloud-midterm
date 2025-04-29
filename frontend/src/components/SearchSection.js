@@ -15,11 +15,10 @@ import {
   CardActionArea,
   Tooltip,
   Alert,
-  Divider,
   ToggleButtonGroup,
   ToggleButton,
 } from '@mui/material';
-import { Search as SearchIcon, Image as ImageIcon } from '@mui/icons-material';
+import { Search as SearchIcon } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
 import { searchImages, getImageUrl, getDoneImages } from '../services/api';
 
