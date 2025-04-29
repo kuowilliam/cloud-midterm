@@ -9,7 +9,7 @@ root/
 │   └── main.py                     
 ├── data/              # shared space
 │   ├── index_file     # faiss    
-│   ├── metadata.json  # redis    
+│   ├── metadata.json  # caption data    
 │   └── upload 
 ├── worker/
 │   ├── Dockerfile    
