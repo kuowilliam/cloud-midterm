@@ -90,7 +90,7 @@ function QueueSection() {
   const queueCount = queuedItems.length || 0;
 
   return (
-    <Card id="queue-section" sx={{ mb: 4 }}>
+    <Card id="queue-section" sx={{ mb: 4, width: '1000px' }}>
       <CardHeader 
         title={`Queue (${queueCount})`}
         subheader="Images waiting to be processed"

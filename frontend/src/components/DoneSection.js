@@ -78,7 +78,7 @@ function DoneSection() {
   const retries = data?.retries || {};
 
   return (
-    <Card id="done-section" sx={{ mb: 4 }}>
+    <Card id="done-section" sx={{ mb: 4, width: '1000px' }}>
       <CardHeader 
         title={`Done (${doneItems.length})`}
         subheader="Processed images"

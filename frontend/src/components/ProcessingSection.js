@@ -71,7 +71,7 @@ function ProcessingSection() {
   const processingWorkers = data?.processing_workers || {};
 
   return (
-    <Card id="processing-section" sx={{ mb: 4 }}>
+    <Card id="processing-section" sx={{ mb: 4, width: '1000px' }}>
       <CardHeader 
         title={`Processing (${processingItems.length})`}
         subheader="Images currently being processed"
