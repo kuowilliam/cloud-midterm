@@ -57,7 +57,7 @@ function UploadSection() {
   };
 
   return (
-    <Card id="upload-section" sx={{ mb: 4 }}>
+    <Card id="upload-section" sx={{ mb: 4 , width: '1000px' }}>
       <CardHeader 
         title="Upload ZIP File" 
         subheader="Upload a ZIP file containing images to process"
