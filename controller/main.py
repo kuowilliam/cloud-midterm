@@ -209,9 +209,21 @@ async def search(
 @app.get("/image/{path:path}")
 def get_image(path: str):
     full = os.path.join(DATA_DIR, path)
-    if os.path.isfile(full):
-        return FileResponse(full)
-    raise HTTPException(status_code=404, detail="Image not found")
+    
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    if full.lower().endswith(".heic"):
+        try:
+            img = Image.open(full).convert("RGB")
+            buffer = io.BytesIO()
+            img.save(buffer, format="PNG")
+            buffer.seek(0)
+            return StreamingResponse(buffer, media_type="image/png")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to convert HEIC: {e}")
+    
+    return FileResponse(full)
 
 @app.post("/reset")
 def reset_system():
