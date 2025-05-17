@@ -8,6 +8,9 @@ from sentence_transformers import SentenceTransformer
 from transformers import BlipProcessor, BlipForConditionalGeneration
 import faiss
 import torch
+from pillow_heif import register_heif_opener
+import piexif
+from geopy.geocoders import Nominatim
 
 # 讀取 Worker 名稱
 WORKER_NAME = os.getenv("WORKER_NAME", "unknown")
@@ -27,6 +30,18 @@ METRICS_HASH = "node_metrics"
 HEARTBEAT_KEY     = f"heartbeat:{WORKER_NAME}"
 HEARTBEAT_EXPIRE  = 5    # 心跳 key 過期時間 (秒)
 HEARTBEAT_INTERVAL= 1     # 心跳更新間隔 (秒)
+
+register_heif_opener()
+geolocator = Nominatim(user_agent="image-rag")
+
+def dms_to_decimal(dms, ref):
+    degrees = dms[0][0] / dms[0][1]
+    minutes = dms[1][0] / dms[1][1]
+    seconds = dms[2][0] / dms[2][1]
+    decimal = degrees + minutes / 60 + seconds / 3600
+    if ref in [b'S', b'W']:
+        decimal *= -1
+    return round(decimal, 6)
 
 # 連線 Redis
 redis = Redis(host="redis", port=6379, decode_responses=True)
@@ -113,9 +128,6 @@ while True:
             out = caption_model.generate(**inputs, max_length=50)
             caption = caption_processor.decode(out[0], skip_special_tokens=True)
 
-            # 生成向量
-            vec = embedder.encode(caption).astype(np.float32)
-
             # 加鎖寫 metadata 和 FAISS
             with redis.lock("write_lock", timeout=10):
                 """
@@ -138,10 +150,60 @@ while True:
                     index = faiss.IndexFlatL2(dim)
 
                 # 更新 metadata
-                metadata.append({
+                # 預設欄位
+                country = None
+                city = None
+                date_str = None
+
+                if image_path.lower().endswith(".heic"):
+                    try:
+                        img = Image.open(full_path)
+                        exif_bytes = img.info.get("exif")
+                        if not exif_bytes:
+                            print(f"❌ No EXIF found: {image_path}")
+                        else:
+                            exif_dict = piexif.load(exif_bytes)
+
+                            # 時間
+                            date_bytes = exif_dict.get("Exif", {}).get(piexif.ExifIFD.DateTimeOriginal)
+                            if date_bytes:
+                                date_str = date_bytes.decode(errors="ignore").split(" ")[0].replace(":", "-")
+
+                            # GPS
+                            gps = exif_dict.get("GPS", {})
+                            lat = gps.get(piexif.GPSIFD.GPSLatitude)
+                            lat_ref = gps.get(piexif.GPSIFD.GPSLatitudeRef)
+                            lon = gps.get(piexif.GPSIFD.GPSLongitude)
+                            lon_ref = gps.get(piexif.GPSIFD.GPSLongitudeRef)
+
+                            if lat and lat_ref and lon and lon_ref:
+                                lat_decimal = dms_to_decimal(lat, lat_ref)
+                                lon_decimal = dms_to_decimal(lon, lon_ref)
+
+                                location = geolocator.reverse((lat_decimal, lon_decimal), language="en", timeout=10)
+                                if location and "address" in location.raw:
+                                    addr = location.raw["address"]
+                                    country = addr.get("country")
+                                    city = addr.get("city", addr.get("town", addr.get("village")))
+                    except Exception as e:
+                        print(f"⚠️ HEIC metadata 提取失敗: {e}")
+
+                # 這裡添加移動過來的向量生成代碼
+                full_text = f"{caption}. Location: {city}, {country}. Date: {date_str or ''}."
+                vec = embedder.encode(full_text).astype(np.float32)
+
+                entry = {
                     "filename": image_path,
                     "caption": caption
-                })
+                }
+                if country:
+                    entry["country"] = country
+                if city:
+                    entry["city"] = city
+                if date_str:
+                    entry["date"] = date_str
+
+                metadata.append(entry)
                 json.dump(metadata, open(META_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
                 # 更新 FAISS

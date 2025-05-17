@@ -9,6 +9,25 @@ from redis import Redis
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from transformers import BlipProcessor, BlipForConditionalGeneration
+import torch
+from PIL import Image
+import io
+from pillow_heif import register_heif_opener
+import piexif
+from geopy.geocoders import Nominatim
+
+register_heif_opener()
+geolocator = Nominatim(user_agent="image-rag-controller")
+
+def dms_to_decimal(dms, ref):
+    degrees = dms[0][0] / dms[0][1]
+    minutes = dms[1][0] / dms[1][1]
+    seconds = dms[2][0] / dms[2][1]
+    decimal = degrees + minutes / 60 + seconds / 3600
+    if ref in [b'S', b'W']:
+        decimal *= -1
+    return round(decimal, 6)
 
 # 監控與回收設定常數
 HEARTBEAT_PREFIX      = "heartbeat:"
@@ -51,9 +70,9 @@ META_PATH = os.path.join(DATA_DIR, "metadata.json")
 INDEX_PATH = os.path.join(DATA_DIR, "index_file.index")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-class SearchQuery(BaseModel):
-    query: str
-    top_k: Optional[int] = 5
+device = "cuda" if torch.cuda.is_available() else "cpu"
+blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(device)
 
 # 偵測死掉節點 & 超時任務回收
 def monitor_loop():
@@ -99,29 +118,90 @@ def upload_zip(zip_file: UploadFile = File(...)):
     count = 0
     for root, _, files in os.walk(UPLOAD_DIR):
         for fname in files:
-            if fname.lower().endswith((".jpg", ".jpeg", ".png")):
+            if fname.lower().endswith((".jpg", ".jpeg", ".png", ".heic")):
                 rel = os.path.relpath(os.path.join(root, fname), DATA_DIR)
                 redis.lpush(QUEUE, rel)
                 count += 1
     return {"message": f"Uploaded and queued {count} images."}
 
 @app.post("/search")
-def search(query: SearchQuery):
+async def search(
+    query: Optional[str] = None,
+    image: Optional[UploadFile] = File(None),
+    top_k: Optional[int] = 5
+):
     if not os.path.exists(META_PATH) or not os.path.exists(INDEX_PATH):
         raise HTTPException(status_code=400, detail="Metadata or index not found")
+    
+    if not query and not image:
+        raise HTTPException(status_code=400, detail="Must provide a query or image")
+
+    # 載入資料
     with open(META_PATH, "r", encoding="utf-8") as f:
         metadata = json.load(f)
     index = faiss.read_index(INDEX_PATH)
-    qv = embedder.encode(query.query)
-    top_k = min(query.top_k, len(metadata))
-    D, I = index.search(np.array([qv]), top_k)
+
+    # 文字或圖片轉換為 query 向量
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if image:
+        image_bytes = await image.read()
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        # Run BLIP to get caption
+        inputs = blip_processor(img, return_tensors="pt").to(device)
+        out = blip_model.generate(**inputs, max_length=50)
+        caption = blip_processor.decode(out[0], skip_special_tokens=True)
+
+        # 預設 metadata
+        country = None
+        city = None
+        date_str = None
+
+        # 如果是 HEIC 試圖解析 EXIF
+        if image.filename.lower().endswith(".heic"):
+            try:
+                exif_bytes = img.info.get("exif")
+                if exif_bytes:
+                    exif_dict = piexif.load(exif_bytes)
+                    # 時間
+                    date_bytes = exif_dict.get("Exif", {}).get(piexif.ExifIFD.DateTimeOriginal)
+                    if date_bytes:
+                        date_str = date_bytes.decode(errors="ignore").split(" ")[0].replace(":", "-")
+                    # GPS
+                    gps = exif_dict.get("GPS", {})
+                    lat = gps.get(piexif.GPSIFD.GPSLatitude)
+                    lat_ref = gps.get(piexif.GPSIFD.GPSLatitudeRef)
+                    lon = gps.get(piexif.GPSIFD.GPSLongitude)
+                    lon_ref = gps.get(piexif.GPSIFD.GPSLongitudeRef)
+
+                    if lat and lat_ref and lon and lon_ref:
+                        lat_decimal = dms_to_decimal(lat, lat_ref)
+                        lon_decimal = dms_to_decimal(lon, lon_ref)
+
+                        location = geolocator.reverse((lat_decimal, lon_decimal), language="en", timeout=10)
+                        if location and "address" in location.raw:
+                            addr = location.raw["address"]
+                            country = addr.get("country")
+                            city = addr.get("city", addr.get("town", addr.get("village")))
+            except Exception as e:
+                print(f"⚠️ Failed to extract HEIC metadata: {e}")
+
+        # 組合 query: metadata + caption
+        query = f"{caption}. Location: {city or ''}, {country or ''}. Date: {date_str or ''}."
+        print(f"🖼️ Final query from image: {query}")
+
+    query_vec = embedder.encode(query)
+    top_k = min(top_k, len(metadata))
+    D, I = index.search(np.array([query_vec]), top_k)
+
     results = []
     for idx, dist in zip(I[0], D[0]):
         info = metadata[idx]
         results.append({
             "filename": info["filename"],
             "caption": info["caption"],
-            "similarity": float(1 - dist/100),
+            "similarity": float(1 - dist / 100),
             "image_path": os.path.join(DATA_DIR, info["filename"])
         })
     return {"results": results}
@@ -207,4 +287,3 @@ def reset_monitor_events():
         return {"message": "Monitor events reset successfully."}
     else:
         return {"message": "No monitor events to reset."}
-

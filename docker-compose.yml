@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   redis:
     image: redis:7
@@ -15,6 +14,7 @@ services:
       - redis
     volumes:
       - ./data:/data
+      - ./controller:/app
 
   worker1:
     build: ./worker
@@ -23,6 +23,7 @@ services:
       - redis
     volumes:
       - ./data:/data
+      - ./worker:/app
     environment:
       - WORKER_NAME=worker1
 
@@ -33,6 +34,7 @@ services:
       - redis
     volumes:
       - ./data:/data
+      - ./worker:/app
     environment:
       - WORKER_NAME=worker2
 
@@ -43,5 +45,6 @@ services:
       - redis
     volumes:
       - ./data:/data
+      - ./worker:/app
     environment:
       - WORKER_NAME=worker3
