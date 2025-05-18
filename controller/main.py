@@ -1,6 +1,6 @@
 import os, time, json, shutil, threading, zipfile, asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
@@ -16,6 +16,13 @@ import io
 from pillow_heif import register_heif_opener
 import piexif
 from geopy.geocoders import Nominatim
+from pdf2image import convert_from_bytes
+from google.generativeai import GenerativeModel, configure as configure_gemini
+import cohere
+from zipfile import ZipFile
+
+from dotenv import load_dotenv
+load_dotenv()
 
 register_heif_opener()
 geolocator = Nominatim(user_agent="image-rag-controller")
@@ -70,6 +77,15 @@ META_PATH = os.path.join(DATA_DIR, "metadata.json")
 INDEX_PATH = os.path.join(DATA_DIR, "index_file.index")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+co = cohere.ClientV2(api_key=COHERE_API_KEY)
+configure_gemini(api_key=GOOGLE_API_KEY)
+gemini = GenerativeModel("gemini-2.5-flash-preview-04-17")
+
+PDF_INDEX_PATH = "/data/pdf_index.index"
+PDF_META_PATH = "/data/pdf_metadata.json"
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
 blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(device)
@@ -106,35 +122,171 @@ def monitor_loop():
                 redis.lpush(MONITOR_CHANNEL, json.dumps(event))
         time.sleep(MONITOR_INTERVAL)
 
-# 其他 API 保持不變
 @app.post("/upload")
 def upload_zip(zip_file: UploadFile = File(...)):
     zip_path = os.path.join(UPLOAD_DIR, zip_file.filename)
+    zip_name = os.path.splitext(zip_file.filename)[0]
+    temp_dir = os.path.join(UPLOAD_DIR, zip_name)  
+    os.makedirs(temp_dir, exist_ok=True)
+
     with open(zip_path, "wb") as f:
         f.write(zip_file.file.read())
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(UPLOAD_DIR)
+        zip_ref.extractall(temp_dir)
     os.remove(zip_path)
+
     count = 0
-    for root, _, files in os.walk(UPLOAD_DIR):
+    saved_paths = []
+    for root, _, files in os.walk(temp_dir):
         for fname in files:
             if fname.lower().endswith((".jpg", ".jpeg", ".png", ".heic")):
-                rel = os.path.relpath(os.path.join(root, fname), DATA_DIR)
+                src = os.path.join(root, fname)
+                dst = os.path.join(UPLOAD_DIR, fname)
+                shutil.move(src, dst)
+                rel = os.path.relpath(dst, DATA_DIR)
                 redis.lpush(QUEUE, rel)
+                saved_paths.append(rel)
                 count += 1
-    return {"message": f"Uploaded and queued {count} images."}
+
+    shutil.rmtree(temp_dir)
+    return {"message": f"Uploaded and queued {count} images.", "queued": saved_paths}
+
+@app.post("/upload/pdf")
+async def upload_pdf_or_zip(upload_file: UploadFile = File(...)):
+    filename = upload_file.filename.lower()
+
+    pdf_upload_dir = os.path.join(UPLOAD_DIR, "pdfs")
+    os.makedirs(pdf_upload_dir, exist_ok=True)
+    saved_paths = []
+
+    # 支援 zip 上傳圖片
+    if filename.endswith(".zip"):
+        temp_path = os.path.join(pdf_upload_dir, filename)
+        with open(temp_path, "wb") as f:
+            f.write(await upload_file.read())
+
+        with ZipFile(temp_path, 'r') as zip_ref:
+            zip_ref.extractall(pdf_upload_dir)
+        os.remove(temp_path)
+
+        # 處理所有解壓後的圖片
+        for root, _, files in os.walk(pdf_upload_dir):
+            for fname in files:
+                if fname.lower().endswith((".jpg", ".jpeg", ".png")):
+                    full_path = os.path.join(root, fname)
+                    rel_path = os.path.relpath(full_path, DATA_DIR)
+                    redis.lpush(QUEUE, rel_path)
+                    saved_paths.append(rel_path)
+
+        return {
+            "message": f"Uploaded ZIP and queued {len(saved_paths)} image(s).",
+            "queued": saved_paths
+        }
+
+    # 處理 PDF → 圖片
+    if filename.endswith(".pdf"):
+        contents = await upload_file.read()
+        try:
+            images = convert_from_bytes(contents, dpi=200)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to convert PDF: {str(e)}")
+
+        if not images:
+            raise HTTPException(status_code=400, detail="No images extracted from PDF")
+
+        pdf_base = os.path.splitext(upload_file.filename)[0]
+        for i, img in enumerate(images):
+            fname = f"{pdf_base}_page_{i:03}.jpg"
+            full_path = os.path.join(pdf_upload_dir, fname)
+            img.save(full_path, "JPEG")
+
+            rel_path = os.path.relpath(full_path, DATA_DIR)
+            redis.lpush(QUEUE, rel_path)
+            saved_paths.append(rel_path)
+
+        return {
+            "message": f"Processed {len(saved_paths)} pages from PDF.",
+            "queued": saved_paths
+        }
+
+    # 檔案格式不支援
+    raise HTTPException(status_code=400, detail="Only PDF or ZIP of images is supported.")
+
+@app.post("/search/pdf")
+async def search_pdf(query: str, top_k: int = 1):
+    if not query:
+        raise HTTPException(status_code=400, detail="Missing query")
+    if not os.path.exists(PDF_INDEX_PATH) or not os.path.exists(PDF_META_PATH):
+        raise HTTPException(status_code=404, detail="PDF FAISS index or metadata not found")
+
+    # 使用 Cohere 將查詢轉成向量
+    input_obj = {
+        "content": [{"type": "text", "text": query}]
+    }
+    response = co.embed(
+        model="embed-v4.0",
+        inputs=[input_obj],
+        input_type="search_query",
+        embedding_types=["float"]
+    )
+    query_vec = np.array(response.embeddings.float_[0]).astype("float32").reshape(1, -1)
+
+    # 查詢 FAISS
+    index = faiss.read_index(PDF_INDEX_PATH)
+    with open(PDF_META_PATH, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    top_k = min(top_k, len(metadata))
+    D, I = index.search(query_vec, top_k)
+
+    # 取第一個結果丟給 Gemini
+    result = metadata[I[0][0]]
+    filename = result["filename"]
+    image_path = os.path.join("/data", filename)
+
+    try:
+        img = Image.open(image_path)
+        prompt = [
+        f"""
+        You are an expert assistant helping users read and understand PDF documents.
+
+        Please respond in **Traditional Chinese** if the user's question is in Chinese.  
+        If the question is in English, answer in English.
+        
+        The following image is a scanned page from a PDF document.
+        Based on the visual content and layout of the page, answer the user's question as clearly and concisely as possible.
+        If the page contains information directly relevant to the question, summarize it accordingly.
+
+        Avoid markdown formatting. Respond in natural language.
+
+        User Question: {query}
+        """, img]
+        response = gemini.generate_content(prompt)
+        answer = response.text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gemini failed: {e}")
+
+    return {
+        "query": query,
+        "top_result": {
+            "filename": filename,
+            "similarity": float(1 - D[0][0] / 100),
+            "image_url": f"/image/{filename}"
+        },
+        "gemini_answer": answer
+    }
 
 @app.post("/search")
 async def search(
-    query: Optional[str] = None,
+    query: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
     top_k: Optional[int] = 5
 ):
     if not os.path.exists(META_PATH) or not os.path.exists(INDEX_PATH):
         raise HTTPException(status_code=400, detail="Metadata or index not found")
     
-    if not query and not image:
-        raise HTTPException(status_code=400, detail="Must provide a query or image")
+    if (query and image and image.filename != "") or (not query and (not image or image.filename == "")):
+        raise HTTPException(status_code=400, detail="Must provide either text or image, not both or neither.")
 
     # 載入資料
     with open(META_PATH, "r", encoding="utf-8") as f:
@@ -206,35 +358,35 @@ async def search(
         })
     return {"results": results}
 
+
 @app.get("/image/{path:path}")
 def get_image(path: str):
     full = os.path.join(DATA_DIR, path)
-    
+
     if not os.path.isfile(full):
         raise HTTPException(status_code=404, detail="Image not found")
 
-    if full.lower().endswith(".heic"):
-        try:
-            img = Image.open(full).convert("RGB")
-            buffer = io.BytesIO()
-            img.save(buffer, format="PNG")
-            buffer.seek(0)
-            return StreamingResponse(buffer, media_type="image/png")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to convert HEIC: {e}")
-    
     return FileResponse(full)
+
+
 
 @app.post("/reset")
 def reset_system():
     if os.path.exists(INDEX_PATH): os.remove(INDEX_PATH)
     with open(META_PATH, "w", encoding="utf-8") as f: json.dump([], f)
+
+    if os.path.exists(PDF_INDEX_PATH): os.remove(PDF_INDEX_PATH)
+    with open(PDF_META_PATH, "w", encoding="utf-8") as f: json.dump([], f)
+
     if os.path.exists(UPLOAD_DIR): shutil.rmtree(UPLOAD_DIR)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+
     redis.delete(QUEUE, PROCESSING_SET, DONE_SET)
     for k in redis.keys("error:*"): redis.delete(k)
     for k in redis.keys("retry:*"): redis.delete(k)
+
     return {"message": "System reset completed."}
+
 
 # 三個 SSE Endpoints
 @app.get("/status")

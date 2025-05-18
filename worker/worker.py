@@ -11,6 +11,12 @@ import torch
 from pillow_heif import register_heif_opener
 import piexif
 from geopy.geocoders import Nominatim
+import base64
+from io import BytesIO
+import cohere
+
+from dotenv import load_dotenv
+load_dotenv()
 
 # 讀取 Worker 名稱
 WORKER_NAME = os.getenv("WORKER_NAME", "unknown")
@@ -81,6 +87,9 @@ Thread(target=publish_metrics, daemon=True).start()
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 # 模型載入
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+co = cohere.ClientV2(api_key=COHERE_API_KEY)
+
 caption_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
 caption_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(device)
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
@@ -122,8 +131,72 @@ while True:
             if not os.path.exists(full_path) or not os.path.isfile(full_path):
                 raise FileNotFoundError(f"File not found: {full_path}")
 
-            # 用 BLIP 生 caption
+            # 開啟圖片
             image = Image.open(full_path).convert("RGB")
+
+            # 判斷是否為 PDF 來源圖片
+            is_pdf_page = image_path.startswith("uploads/pdfs/")
+
+            if image_path.startswith("uploads/pdfs/"):
+                print(f"📄 Processing PDF image with Cohere: {image_path}")
+
+                # 轉成 base64 URL
+                buf = BytesIO()
+                image.save(buf, format="JPEG")
+                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                b64_url = f"data:image/jpeg;base64,{b64}"
+
+                image_input = {
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": b64_url}}
+                    ]
+                }
+
+                try:
+                    res = co.embed(
+                        model="embed-v4.0",
+                        inputs=[image_input],
+                        input_type="search_document",
+                        embedding_types=["float"]
+                    )
+                    vector = np.array(res.embeddings.float_[0], dtype=np.float32)
+
+                    PDF_INDEX_PATH = "/data/pdf_index.index"
+                    PDF_META_PATH = "/data/pdf_metadata.json"
+
+                    with redis.lock("pdf_write_lock", timeout=10):
+                        if os.path.exists(PDF_INDEX_PATH):
+                            pdf_index = faiss.read_index(PDF_INDEX_PATH)
+                        else:
+                            pdf_index = faiss.IndexFlatL2(len(vector))
+
+                        if os.path.exists(PDF_META_PATH):
+                            with open(PDF_META_PATH, "r", encoding="utf-8") as f:
+                                pdf_meta = json.load(f)
+                        else:
+                            pdf_meta = []
+
+                        pdf_index.add(np.array([vector]))
+                        faiss.write_index(pdf_index, PDF_INDEX_PATH)
+
+                        pdf_meta.append({"filename": image_path})
+                        json.dump(pdf_meta, open(PDF_META_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+
+                    # 標記完成
+                    redis.delete(f"processing_ts:{image_path}")
+                    redis.srem(PROCESSING_SET, image_path)
+                    redis.hdel("processing_workers", image_path)
+                    redis.sadd(DONE_SET, image_path)
+
+                    print(f"✅ {WORKER_NAME} done {image_path} with Cohere embedding")
+
+                    continue  # ❗️這一點很重要，跳過預設 BLIP 處理
+
+                except Exception as e:
+                    print(f"❌ Cohere embedding failed for {image_path}: {e}")
+                    raise e
+
+            # 用 BLIP 生 caption
             inputs = caption_processor(image, return_tensors="pt").to(device)
             out = caption_model.generate(**inputs, max_length=50)
             caption = caption_processor.decode(out[0], skip_special_tokens=True)
@@ -155,13 +228,14 @@ while True:
                 city = None
                 date_str = None
 
+                # 若為 HEIC，先提取 metadata，再轉成 JPG 並覆蓋
                 if image_path.lower().endswith(".heic"):
                     try:
                         img = Image.open(full_path)
+
+                        # 提取 EXIF
                         exif_bytes = img.info.get("exif")
-                        if not exif_bytes:
-                            print(f"❌ No EXIF found: {image_path}")
-                        else:
+                        if exif_bytes:
                             exif_dict = piexif.load(exif_bytes)
 
                             # 時間
@@ -179,14 +253,32 @@ while True:
                             if lat and lat_ref and lon and lon_ref:
                                 lat_decimal = dms_to_decimal(lat, lat_ref)
                                 lon_decimal = dms_to_decimal(lon, lon_ref)
-
                                 location = geolocator.reverse((lat_decimal, lon_decimal), language="en", timeout=10)
                                 if location and "address" in location.raw:
                                     addr = location.raw["address"]
                                     country = addr.get("country")
                                     city = addr.get("city", addr.get("town", addr.get("village")))
+                        else:
+                            print(f"❌ No EXIF found: {image_path}")
+
+                        # ✅ 轉成 JPG 並覆蓋：uploads/foo.heic → uploads/foo.jpg
+                        base_name = os.path.splitext(image_path)[0]  # uploads/foo
+                        new_rel_path = base_name + ".jpg"
+                        new_abs_path = os.path.join("/data", new_rel_path)
+
+                        img.convert("RGB").save(new_abs_path, "JPEG")
+
+                        # 刪除原始 .heic
+                        os.remove(full_path)
+
+                        # 替換 image_path 與 full_path 為新的 .jpg
+                        image_path = new_rel_path
+                        full_path = new_abs_path
+
+                        print(f"🖼️ HEIC converted and replaced: {image_path}")
+
                     except Exception as e:
-                        print(f"⚠️ HEIC metadata 提取失敗: {e}")
+                        print(f"⚠️ HEIC metadata or convert failed: {e}")
 
                 # 這裡添加移動過來的向量生成代碼
                 full_text = f"{caption}. Location: {city}, {country}. Date: {date_str or ''}."

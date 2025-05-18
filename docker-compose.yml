@@ -15,6 +15,8 @@ services:
     volumes:
       - ./data:/data
       - ./controller:/app
+    env_file:
+      - ./controller/.env
 
   worker1:
     build: ./worker
@@ -24,6 +26,8 @@ services:
     volumes:
       - ./data:/data
       - ./worker:/app
+    env_file:
+      - ./worker/.env
     environment:
       - WORKER_NAME=worker1
 
@@ -35,6 +39,8 @@ services:
     volumes:
       - ./data:/data
       - ./worker:/app
+    env_file:
+      - ./worker/.env
     environment:
       - WORKER_NAME=worker2
 
@@ -46,5 +52,7 @@ services:
     volumes:
       - ./data:/data
       - ./worker:/app
+    env_file:
+      - ./worker/.env
     environment:
       - WORKER_NAME=worker3
