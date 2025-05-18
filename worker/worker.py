@@ -14,6 +14,7 @@ from geopy.geocoders import Nominatim
 import base64
 from io import BytesIO
 import cohere
+import random
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -23,12 +24,11 @@ WORKER_NAME = os.getenv("WORKER_NAME", "unknown")
 
 # 資料目錄與 Redis key 設定
 UPLOAD_DIR = "/data/uploads"
-META_PATH = "/data/metadata.json"
-INDEX_PATH = "/data/index_file.index"
 
-QUEUE = "image_queue"
-PROCESSING_SET = "processing_set"
-DONE_SET = "done_set"
+# 將單一queue換成prefix
+QUEUE_PREFIX = "image_queue"
+PROCESSING_SET_PREFIX = "processing_set"
+DONE_SET_PREFIX = "done_set"
 
 # Metrics Hash 名稱
 METRICS_HASH = "node_metrics"
@@ -95,36 +95,59 @@ caption_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-im
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 # 載入 metadata 和 index
-if os.path.exists(META_PATH):
-    with open(META_PATH, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-else:
-    metadata = []
-if os.path.exists(INDEX_PATH):
-    index = faiss.read_index(INDEX_PATH)
-else:
-    dim = embedder.get_sentence_embedding_dimension()
-    index = faiss.IndexFlatL2(dim)
-
+# 不需要預先載入全域metadata和index
 print(f"Worker '{WORKER_NAME}' started on {device} device")
 
 # 不停循環從 redis 的 image_queue 拿任務出來做
 while True:
     try:
-        image_path = redis.rpop(QUEUE)
-        if not image_path:
-            time.sleep(1)
+        # 1) 先從 Redis 拿出所有 active_users
+        user_ids = list(redis.smembers("active_users"))
+        # 2) 計算每個 user 的隊列長度
+        lengths = []
+        total = 0
+        for u in user_ids:
+            l = redis.llen(f"{QUEUE_PREFIX}:{u}")
+            if l > 0:
+                lengths.append((u, l))
+                total += l
+        # 如果沒有任何任務，sleep 然後繼續
+        if total == 0:
+            time.sleep(0.1)
             continue
-        
-        # 記錄「任務開始時間」，並寫入 processing timestamp
+
+        # 3) 按 length 加權隨機選一個 user
+        #    （隊列越長被選中的機率越大）
+        r = random.uniform(0, total)
+        upto = 0
+        for (u, l) in lengths:
+            upto += l
+            if upto >= r:
+                selected_user = u
+                break
+
+        queue_key = f"{QUEUE_PREFIX}:{selected_user}"
+        image_path = redis.rpop(queue_key)
+        if not image_path:
+            # 這個極少發生，重試一下
+            continue
+
+        # --- 拿到一條真正要處理的任務，下面沿用你現有的邏輯，只是把 `user` 換成 selected_user ---
+        user = selected_user
         start_time = time.time()
-        redis.set(f"processing_ts:{image_path}", start_time)
+        redis.set(f"processing_ts:{user}:{image_path}", start_time)
         
-        print(f"🔄 Processing image: {image_path} by {WORKER_NAME}")
+        print(f"🔄 Processing image: {image_path} for user {user} by {WORKER_NAME}")
 
         # 標記處理中並記錄是哪一台
-        redis.sadd(PROCESSING_SET, image_path)
-        redis.hset("processing_workers", image_path, WORKER_NAME)
+        redis.sadd(f"{PROCESSING_SET_PREFIX}:{user}", image_path)
+        redis.hset("processing_workers", f"{user}:{image_path}", WORKER_NAME)
+        
+        # 使用者特定的路徑
+        user_meta = f"/data/metadata_{user}.json"
+        user_index = f"/data/index_file_{user}.index"
+        user_pdf_index = f"/data/pdf_index_{user}.index"
+        user_pdf_meta = f"/data/pdf_metadata_{user}.json"
         
         full_path = os.path.join("/data", image_path)
         try:
@@ -134,10 +157,15 @@ while True:
             # 開啟圖片
             image = Image.open(full_path).convert("RGB")
 
-            # 判斷是否為 PDF 來源圖片
-            is_pdf_page = image_path.startswith("uploads/pdfs/")
+            # 動態判斷：是不是上傳到 uploads/{user}/pdfs 下的檔案
+            pdf_folder = f"uploads/{user}/pdfs"
+            # 把兩邊都標準化一下再比
+            norm_image = os.path.normpath(image_path)
+            norm_folder = os.path.normpath(pdf_folder)
+            print(f"[DEBUG] user={user} pdf_folder={norm_folder} image_path={norm_image}")
+            is_pdf_page = norm_image.startswith(norm_folder)
 
-            if image_path.startswith("uploads/pdfs/"):
+            if is_pdf_page:
                 print(f"📄 Processing PDF image with Cohere: {image_path}")
 
                 # 轉成 base64 URL
@@ -161,34 +189,31 @@ while True:
                     )
                     vector = np.array(res.embeddings.float_[0], dtype=np.float32)
 
-                    PDF_INDEX_PATH = "/data/pdf_index.index"
-                    PDF_META_PATH = "/data/pdf_metadata.json"
-
-                    with redis.lock("pdf_write_lock", timeout=10):
-                        if os.path.exists(PDF_INDEX_PATH):
-                            pdf_index = faiss.read_index(PDF_INDEX_PATH)
+                    with redis.lock(f"pdf_write_lock:{user}", timeout=10):
+                        if os.path.exists(user_pdf_index):
+                            pdf_index = faiss.read_index(user_pdf_index)
                         else:
                             pdf_index = faiss.IndexFlatL2(len(vector))
 
-                        if os.path.exists(PDF_META_PATH):
-                            with open(PDF_META_PATH, "r", encoding="utf-8") as f:
+                        if os.path.exists(user_pdf_meta):
+                            with open(user_pdf_meta, "r", encoding="utf-8") as f:
                                 pdf_meta = json.load(f)
                         else:
                             pdf_meta = []
 
                         pdf_index.add(np.array([vector]))
-                        faiss.write_index(pdf_index, PDF_INDEX_PATH)
+                        faiss.write_index(pdf_index, user_pdf_index)
 
                         pdf_meta.append({"filename": image_path})
-                        json.dump(pdf_meta, open(PDF_META_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+                        json.dump(pdf_meta, open(user_pdf_meta, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
                     # 標記完成
-                    redis.delete(f"processing_ts:{image_path}")
-                    redis.srem(PROCESSING_SET, image_path)
-                    redis.hdel("processing_workers", image_path)
-                    redis.sadd(DONE_SET, image_path)
+                    redis.delete(f"processing_ts:{user}:{image_path}")
+                    redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", image_path)
+                    redis.hdel("processing_workers", f"{user}:{image_path}")
+                    redis.sadd(f"{DONE_SET_PREFIX}:{user}", image_path)
 
-                    print(f"✅ {WORKER_NAME} done {image_path} with Cohere embedding")
+                    print(f"✅ {WORKER_NAME} done {image_path} for user {user} with Cohere embedding")
 
                     continue  # ❗️這一點很重要，跳過預設 BLIP 處理
 
@@ -202,22 +227,22 @@ while True:
             caption = caption_processor.decode(out[0], skip_special_tokens=True)
 
             # 加鎖寫 metadata 和 FAISS
-            with redis.lock("write_lock", timeout=10):
+            with redis.lock(f"write_lock:{user}", timeout=10):
                 """
                 worker 拿到鎖之後
                 馬上讀「現在最新磁碟上的 metadata.json、index」
                 基於最新版本去加自己的新資料
                 以免覆蓋掉其他 worker 的資料
                 """
-                # 讀 metadata
-                if os.path.exists(META_PATH):
-                    metadata = json.load(open(META_PATH, "r", encoding="utf-8"))
+                # 讀使用者的 metadata
+                if os.path.exists(user_meta):
+                    metadata = json.load(open(user_meta, "r", encoding="utf-8"))
                 else:
                     metadata = []
 
-                # 讀 index
-                if os.path.exists(INDEX_PATH):
-                    index = faiss.read_index(INDEX_PATH)
+                # 讀使用者的 index
+                if os.path.exists(user_index):
+                    index = faiss.read_index(user_index)
                 else:
                     dim = embedder.get_sentence_embedding_dimension()
                     index = faiss.IndexFlatL2(dim)
@@ -296,39 +321,39 @@ while True:
                     entry["date"] = date_str
 
                 metadata.append(entry)
-                json.dump(metadata, open(META_PATH, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+                json.dump(metadata, open(user_meta, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
                 # 更新 FAISS
                 index.add(np.array([vec]))
-                faiss.write_index(index, INDEX_PATH)
+                faiss.write_index(index, user_index)
 
             # 處理完成：移除 processing 記錄、加入 done 並清 processing_workers
-            redis.delete(f"processing_ts:{image_path}")
-            redis.srem(PROCESSING_SET, image_path)
-            redis.hdel("processing_workers", image_path)
-            redis.sadd(DONE_SET, image_path)
+            redis.delete(f"processing_ts:{user}:{image_path}")
+            redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", image_path)
+            redis.hdel("processing_workers", f"{user}:{image_path}")
+            redis.sadd(f"{DONE_SET_PREFIX}:{user}", image_path)
 
             elapsed = time.time() - start_time
-            print(f"✅ {WORKER_NAME} done {image_path} in {elapsed:.2f}s: {caption}")
+            print(f"✅ {WORKER_NAME} done {image_path} for user {user} in {elapsed:.2f}s: {caption}")
 
         except Exception as e:
             # 處理失敗：清處理時間，記錄 error，並做一次 retry
-            error_msg = f"❌ Error processing {image_path} by {WORKER_NAME}: {str(e)}"
+            error_msg = f"❌ Error processing {image_path} for user {user} by {WORKER_NAME}: {str(e)}"
             print(error_msg)
             print(traceback.format_exc())
 
             # 清理 processing set
-            redis.delete(f"processing_ts:{image_path}")
-            redis.srem(PROCESSING_SET, image_path)
-            redis.set(f"error:{image_path}", error_msg)
+            redis.delete(f"processing_ts:{user}:{image_path}")
+            redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", image_path)
+            redis.set(f"error:{user}:{image_path}", error_msg)
 
             # 重試一次
-            if not redis.get(f"retry:{image_path}"):
-                print(f"🔄 Requeueing {image_path} for retry")
-                redis.set(f"retry:{image_path}", "1")
-                redis.lpush(QUEUE, image_path)
+            if not redis.get(f"retry:{user}:{image_path}"):
+                print(f"🔄 Requeueing {image_path} for user {user} for retry")
+                redis.set(f"retry:{user}:{image_path}", "1")
+                redis.lpush(f"{QUEUE_PREFIX}:{user}", image_path)
             else:
-                print(f"❌ Failed to process {image_path} after retry")
+                print(f"❌ Failed to process {image_path} for user {user} after retry")
 
     except Exception as e:
         print(f"⚠️ Worker main loop error: {str(e)}")

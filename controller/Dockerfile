@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir \
     fastapi uvicorn python-multipart redis faiss-cpu \
     sentence-transformers transformers torch pillow \
-    pillow-heif piexif geopy psutil pdf2image cohere google-generativeai python-dotenv
+    pillow-heif piexif geopy psutil pdf2image cohere google-generativeai python-dotenv \
+    passlib[bcrypt] pyjwt
 
 RUN python -c "from transformers import BlipProcessor, BlipForConditionalGeneration; \
                BlipProcessor.from_pretrained('Salesforce/blip-image-captioning-base'); \
