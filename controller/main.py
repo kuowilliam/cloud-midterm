@@ -24,6 +24,13 @@ from zipfile import ZipFile
 from dotenv import load_dotenv
 load_dotenv()
 
+# ===== Auth imports =====
+from fastapi import Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from passlib.context import CryptContext
+import jwt
+from datetime import datetime, timedelta, timezone
+
 register_heif_opener()
 geolocator = Nominatim(user_agent="image-rag-controller")
 
@@ -66,15 +73,18 @@ app.add_middleware(
 DATA_DIR = "/data"
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+# 確保有 users.json
+users_db_path = os.path.join(DATA_DIR, "users.json")
+if not os.path.exists(users_db_path):
+    with open(users_db_path, "w", encoding="utf-8") as f:
+        json.dump({}, f)
 redis = Redis(host="redis", port=6379, decode_responses=True)
-QUEUE = "image_queue"
-PROCESSING_SET = "processing_set"
-DONE_SET = "done_set"
+QUEUE_PREFIX = "image_queue"
+PROCESSING_SET_PREFIX = "processing_set"
+DONE_SET_PREFIX = "done_set"
 MONITOR_CHANNEL = "monitor_events"
 
 # FAISS 與 metadata 設定
-META_PATH = os.path.join(DATA_DIR, "metadata.json")
-INDEX_PATH = os.path.join(DATA_DIR, "index_file.index")
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
@@ -83,50 +93,106 @@ co = cohere.ClientV2(api_key=COHERE_API_KEY)
 configure_gemini(api_key=GOOGLE_API_KEY)
 gemini = GenerativeModel("gemini-2.5-flash-preview-04-17")
 
-PDF_INDEX_PATH = "/data/pdf_index.index"
-PDF_META_PATH = "/data/pdf_metadata.json"
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
 blip_processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
 blip_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base").to(device)
+
+# ===== Auth 設定 =====
+SECRET_KEY = os.getenv("JWT_SECRET")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
+def load_users():
+    with open(users_db_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_users(u):
+    with open(users_db_path, "w", encoding="utf-8") as f:
+        json.dump(u, f, indent=2)
+
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
+
+def hash_password(pw):
+    return pwd_context.hash(pw)
+
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user = payload.get("sub")
+        if user is None:
+            raise
+        return user
+    except:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
 # 偵測死掉節點 & 超時任務回收
 def monitor_loop():
     while True:
         now = time.time()
-        # Dead worker 檢測
-        active = redis.smembers("active_workers")
-        for worker in active:
-            if not redis.exists(HEARTBEAT_PREFIX + worker):
+        # 1) 檢查死掉的 worker
+        active_workers = redis.smembers("active_workers")
+        for w in active_workers:
+            if not redis.exists(HEARTBEAT_PREFIX + w):
                 proc_map = redis.hgetall("processing_workers")
                 requeued = []
-                for item, w in proc_map.items():
+                for item, worker in proc_map.items():
                     if w == worker:
-                        redis.srem(PROCESSING_SET, item)
+                        # item 現在是 "{user}:{image_path}" 格式
+                        user, *path_parts = item.split(":", 1)
+                        image_path = path_parts[0]
+                        proc_key = f"{PROCESSING_SET_PREFIX}:{user}"
+                        queue_key = f"{QUEUE_PREFIX}:{user}"
+                        
+                        redis.srem(proc_key, image_path)
                         redis.hdel("processing_workers", item)
-                        redis.lpush(QUEUE, item)
-                        requeued.append(item)
-                event = {"ts": now, "type": "worker_dead", "worker": worker, "requeued": requeued}
+                        redis.lpush(queue_key, image_path)
+                        requeued.append(image_path)
+                
+                event = {"ts": now, "type": "worker_dead", "worker": w, "requeued": requeued}
                 redis.lpush(MONITOR_CHANNEL, json.dumps(event))
-                redis.srem("active_workers", worker)
-        # Timeout 任務回收
-        for item in redis.smembers(PROCESSING_SET):
-            ts_key = PROCESSING_TS_PREFIX + item
-            ts = redis.get(ts_key)
-            if ts and now - float(ts) > PROCESSING_TIMEOUT:
-                redis.srem(PROCESSING_SET, item)
-                redis.hdel("processing_workers", item)
-                redis.delete(ts_key)
-                redis.lpush(QUEUE, item)
-                event = {"ts": now, "type": "task_timeout", "item": item}
-                redis.lpush(MONITOR_CHANNEL, json.dumps(event))
+                redis.srem("active_workers", w)
+        
+        # 2) 檢查每個 user 的 timeout 任務
+        active_users = redis.smembers("active_users")
+        for user in active_users:
+            proc_key = f"{PROCESSING_SET_PREFIX}:{user}"
+            for item in redis.smembers(proc_key):
+                ts_key = f"{PROCESSING_TS_PREFIX}{user}:{item}"
+                ts = redis.get(ts_key)
+                if ts and now - float(ts) > PROCESSING_TIMEOUT:
+                    # 回收到 per-user queue
+                    redis.srem(proc_key, item)
+                    redis.hdel("processing_workers", f"{user}:{item}")
+                    redis.delete(ts_key)
+                    redis.lpush(f"{QUEUE_PREFIX}:{user}", item)
+                    ev = {"ts": now, "type": "task_timeout", "user": user, "item": item}
+                    redis.lpush(MONITOR_CHANNEL, json.dumps(ev))
+        
         time.sleep(MONITOR_INTERVAL)
 
 @app.post("/upload")
-def upload_zip(zip_file: UploadFile = File(...)):
-    zip_path = os.path.join(UPLOAD_DIR, zip_file.filename)
+def upload_zip(
+    zip_file: UploadFile = File(...),
+    user: str = Depends(get_current_user)
+):
+    # 1) 先在程式碼裡產生 user 專屬 uploads 資料夾
+    user_upload_dir = os.path.join(DATA_DIR, "uploads", user)
+    os.makedirs(user_upload_dir, exist_ok=True)
+
+    # 2) 之後所有路徑都從 user_upload_dir 開始
+    zip_path = os.path.join(user_upload_dir, zip_file.filename)
     zip_name = os.path.splitext(zip_file.filename)[0]
-    temp_dir = os.path.join(UPLOAD_DIR, zip_name)  
+    temp_dir = os.path.join(user_upload_dir, zip_name)  
     os.makedirs(temp_dir, exist_ok=True)
 
     with open(zip_path, "wb") as f:
@@ -141,10 +207,10 @@ def upload_zip(zip_file: UploadFile = File(...)):
         for fname in files:
             if fname.lower().endswith((".jpg", ".jpeg", ".png", ".heic")):
                 src = os.path.join(root, fname)
-                dst = os.path.join(UPLOAD_DIR, fname)
+                dst = os.path.join(user_upload_dir, fname)
                 shutil.move(src, dst)
                 rel = os.path.relpath(dst, DATA_DIR)
-                redis.lpush(QUEUE, rel)
+                redis.lpush(f"{QUEUE_PREFIX}:{user}", rel)
                 saved_paths.append(rel)
                 count += 1
 
@@ -152,10 +218,18 @@ def upload_zip(zip_file: UploadFile = File(...)):
     return {"message": f"Uploaded and queued {count} images.", "queued": saved_paths}
 
 @app.post("/upload/pdf")
-async def upload_pdf_or_zip(upload_file: UploadFile = File(...)):
+async def upload_pdf_or_zip(
+    upload_file: UploadFile = File(...),
+    user: str = Depends(get_current_user)
+):
     filename = upload_file.filename.lower()
 
-    pdf_upload_dir = os.path.join(UPLOAD_DIR, "pdfs")
+    # 創建用戶專屬上傳目錄
+    user_upload_dir = os.path.join(DATA_DIR, "uploads", user)
+    os.makedirs(user_upload_dir, exist_ok=True)
+    
+    # PDF專屬子目錄
+    pdf_upload_dir = os.path.join(user_upload_dir, "pdfs")
     os.makedirs(pdf_upload_dir, exist_ok=True)
     saved_paths = []
 
@@ -175,7 +249,7 @@ async def upload_pdf_or_zip(upload_file: UploadFile = File(...)):
                 if fname.lower().endswith((".jpg", ".jpeg", ".png")):
                     full_path = os.path.join(root, fname)
                     rel_path = os.path.relpath(full_path, DATA_DIR)
-                    redis.lpush(QUEUE, rel_path)
+                    redis.lpush(f"{QUEUE_PREFIX}:{user}", rel_path)
                     saved_paths.append(rel_path)
 
         return {
@@ -201,7 +275,7 @@ async def upload_pdf_or_zip(upload_file: UploadFile = File(...)):
             img.save(full_path, "JPEG")
 
             rel_path = os.path.relpath(full_path, DATA_DIR)
-            redis.lpush(QUEUE, rel_path)
+            redis.lpush(f"{QUEUE_PREFIX}:{user}", rel_path)
             saved_paths.append(rel_path)
 
         return {
@@ -213,10 +287,18 @@ async def upload_pdf_or_zip(upload_file: UploadFile = File(...)):
     raise HTTPException(status_code=400, detail="Only PDF or ZIP of images is supported.")
 
 @app.post("/search/pdf")
-async def search_pdf(query: str, top_k: int = 1):
+async def search_pdf(
+    query: str, 
+    top_k: int = 1,
+    user: str = Depends(get_current_user)
+):
     if not query:
         raise HTTPException(status_code=400, detail="Missing query")
-    if not os.path.exists(PDF_INDEX_PATH) or not os.path.exists(PDF_META_PATH):
+    
+    user_pdf_index = os.path.join(DATA_DIR, f"pdf_index_{user}.index")
+    user_pdf_meta = os.path.join(DATA_DIR, f"pdf_metadata_{user}.json")
+    
+    if not os.path.exists(user_pdf_index) or not os.path.exists(user_pdf_meta):
         raise HTTPException(status_code=404, detail="PDF FAISS index or metadata not found")
 
     # 使用 Cohere 將查詢轉成向量
@@ -232,8 +314,8 @@ async def search_pdf(query: str, top_k: int = 1):
     query_vec = np.array(response.embeddings.float_[0]).astype("float32").reshape(1, -1)
 
     # 查詢 FAISS
-    index = faiss.read_index(PDF_INDEX_PATH)
-    with open(PDF_META_PATH, "r", encoding="utf-8") as f:
+    index = faiss.read_index(user_pdf_index)
+    with open(user_pdf_meta, "r", encoding="utf-8") as f:
         metadata = json.load(f)
 
     top_k = min(top_k, len(metadata))
@@ -280,18 +362,22 @@ async def search_pdf(query: str, top_k: int = 1):
 async def search(
     query: Optional[str] = Form(None),
     image: Optional[UploadFile] = File(None),
-    top_k: Optional[int] = 5
+    top_k: Optional[int] = 5,
+    user: str = Depends(get_current_user)
 ):
-    if not os.path.exists(META_PATH) or not os.path.exists(INDEX_PATH):
+    user_meta = os.path.join(DATA_DIR, f"metadata_{user}.json")
+    user_index = os.path.join(DATA_DIR, f"index_file_{user}.index")
+    
+    if not os.path.exists(user_meta) or not os.path.exists(user_index):
         raise HTTPException(status_code=400, detail="Metadata or index not found")
     
     if (query and image and image.filename != "") or (not query and (not image or image.filename == "")):
         raise HTTPException(status_code=400, detail="Must provide either text or image, not both or neither.")
 
     # 載入資料
-    with open(META_PATH, "r", encoding="utf-8") as f:
+    with open(user_meta, "r", encoding="utf-8") as f:
         metadata = json.load(f)
-    index = faiss.read_index(INDEX_PATH)
+    index = faiss.read_index(user_index)
 
     # 文字或圖片轉換為 query 向量
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -371,36 +457,54 @@ def get_image(path: str):
 
 
 @app.post("/reset")
-def reset_system():
-    if os.path.exists(INDEX_PATH): os.remove(INDEX_PATH)
-    with open(META_PATH, "w", encoding="utf-8") as f: json.dump([], f)
+def reset_system(user: str = Depends(get_current_user)):
+    # 只刪除該使用者的索引和元數據
+    user_meta = os.path.join(DATA_DIR, f"metadata_{user}.json")
+    user_index = os.path.join(DATA_DIR, f"index_file_{user}.index")
+    user_pdf_index = os.path.join(DATA_DIR, f"pdf_index_{user}.index")
+    user_pdf_meta = os.path.join(DATA_DIR, f"pdf_metadata_{user}.json")
+    
+    if os.path.exists(user_index): os.remove(user_index)
+    with open(user_meta, "w", encoding="utf-8") as f: json.dump([], f)
 
-    if os.path.exists(PDF_INDEX_PATH): os.remove(PDF_INDEX_PATH)
-    with open(PDF_META_PATH, "w", encoding="utf-8") as f: json.dump([], f)
+    if os.path.exists(user_pdf_index): os.remove(user_pdf_index)
+    with open(user_pdf_meta, "w", encoding="utf-8") as f: json.dump([], f)
 
-    if os.path.exists(UPLOAD_DIR): shutil.rmtree(UPLOAD_DIR)
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    # 清除用戶專屬上傳目錄
+    user_upload_dir = os.path.join(DATA_DIR, "uploads", user)
+    if os.path.exists(user_upload_dir): 
+        shutil.rmtree(user_upload_dir)
+        os.makedirs(user_upload_dir, exist_ok=True)
 
-    redis.delete(QUEUE, PROCESSING_SET, DONE_SET)
-    for k in redis.keys("error:*"): redis.delete(k)
-    for k in redis.keys("retry:*"): redis.delete(k)
+    # 清空使用者的佇列
+    redis.delete(f"{QUEUE_PREFIX}:{user}", f"{PROCESSING_SET_PREFIX}:{user}", f"{DONE_SET_PREFIX}:{user}")
+    for k in redis.keys(f"error:{user}:*"): redis.delete(k)
+    for k in redis.keys(f"retry:{user}:*"): redis.delete(k)
 
-    return {"message": "System reset completed."}
+    return {"message": f"Reset completed for user {user}."}
 
 
 # 三個 SSE Endpoints
 @app.get("/status")
-async def status_sse():
+async def status_sse(user: str = Depends(get_current_user)):
+    queue_key      = f"{QUEUE_PREFIX}:{user}"
+    processing_key = f"{PROCESSING_SET_PREFIX}:{user}"
+    done_key       = f"{DONE_SET_PREFIX}:{user}"
+
     async def event_generator():
         while True:
             data = {
-                "queue": redis.llen(QUEUE),
-                "queued_items": redis.lrange(QUEUE, 0, -1),
-                "processing": list(redis.smembers(PROCESSING_SET)),
-                "processing_workers": redis.hgetall("processing_workers"),
-                "done": list(redis.smembers(DONE_SET)),
-                "errors": {item: redis.get(f"error:{item}") for item in list(redis.smembers(PROCESSING_SET)) + list(redis.smembers(DONE_SET)) if redis.exists(f"error:{item}")},
-                "retries": {item: redis.get(f"retry:{item}") for item in list(redis.smembers(PROCESSING_SET)) + list(redis.smembers(DONE_SET)) if redis.exists(f"retry:{item}")}
+                "queue":        redis.llen(queue_key),
+                "queued_items": redis.lrange(queue_key, 0, -1),
+                "processing":   list(redis.smembers(processing_key)),
+                "processing_workers": {
+                    item_key.split(":",1)[1]: worker
+                    for item_key, worker in redis.hgetall("processing_workers").items()
+                    if item_key.startswith(f"{user}:")
+                },
+                "done":         list(redis.smembers(done_key)),
+                "errors": {item: redis.get(f"error:{user}:{item}") for item in list(redis.smembers(processing_key)) + list(redis.smembers(done_key)) if redis.exists(f"error:{user}:{item}")},
+                "retries": {item: redis.get(f"retry:{user}:{item}") for item in list(redis.smembers(processing_key)) + list(redis.smembers(done_key)) if redis.exists(f"retry:{user}:{item}")}
             }
             yield f"data: {json.dumps(data)}\n\n"
             await asyncio.sleep(SSE_PUSH_INTERVAL)
@@ -434,15 +538,17 @@ async def events_sse(limit: int = 50):
 
 # delete 佇列中的項目
 @app.delete("/queue/{item:path}")
-def delete_queued_item(item: str):
-    removed = redis.lrem(QUEUE, 0, item)
+def delete_queued_item(item: str, user: str = Depends(get_current_user)):
+    queue_key = f"{QUEUE_PREFIX}:{user}"
+    removed = redis.lrem(queue_key, 0, item)
     if removed == 0:
         raise HTTPException(status_code=404, detail=f"Item {item} not found in queue")
     return {"message": f"Removed {removed} occurrence(s) of {item} from queue."}
 
 @app.get("/done")
-def list_done_images():
-    return {"done_images": list(redis.smembers(DONE_SET))}
+def list_done_images(user: str = Depends(get_current_user)):
+    done_key = f"{DONE_SET_PREFIX}:{user}"
+    return {"done_images": list(redis.smembers(done_key))}
 
 @app.post("/monitor/events/reset")
 def reset_monitor_events():
@@ -451,3 +557,27 @@ def reset_monitor_events():
         return {"message": "Monitor events reset successfully."}
     else:
         return {"message": "No monitor events to reset."}
+
+class AuthForm(BaseModel):
+    username: str
+    password: str
+
+@app.post("/signup")
+def signup(form: AuthForm):
+    users = load_users()
+    if form.username in users:
+        raise HTTPException(status_code=400, detail="User already exists")
+    users[form.username] = {"password": hash_password(form.password)}
+    save_users(users)
+    # 同步新增 active_users set 讓 worker 能偵測到
+    redis.sadd("active_users", form.username)
+    return {"message": "Signup successful"}
+
+@app.post("/login")
+def login(form: OAuth2PasswordRequestForm = Depends()):
+    users = load_users()
+    u = users.get(form.username)
+    if not u or not verify_password(form.password, u["password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = create_access_token({"sub": form.username})
+    return {"access_token": token, "token_type": "bearer"}
