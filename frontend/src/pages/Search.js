@@ -1,24 +1,56 @@
 import React from 'react';
-import { Typography, Box, Divider } from '@mui/material';
+import { Typography, Box, Divider, Container, Paper } from '@mui/material';
 import AppLayout from '../components/Layout/AppLayout';
 import SearchSection from '../components/SearchSection';
 
 function Search() {
   return (
     <AppLayout>
-      <Box sx={{ width: '100%', overflowY: 'auto', height: 'calc(100vh - 100px)' }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Image Search
-        </Typography>
-        <Typography variant="subtitle1" color="text.secondary" paragraph>
-          Search for images using natural language queries
-        </Typography>
-        
-        <Divider sx={{ my: 3 }} />
-        
-        {/* Search Section */}
-        <SearchSection />
-      </Box>
+      <Container maxWidth={false} sx={{ height: 'calc(100vh - 100px)' }}>
+        <Paper
+          elevation={2}
+          sx={{
+            height: '100%',
+            p: 4,
+            borderRadius: 2,
+            overflowY: 'auto',
+          }}
+        >
+          {/* 頁面標題 */}
+          <Box sx={{ mb: 4 }}>
+            <Typography
+              variant="h4"
+              component="h1"
+              gutterBottom
+              sx={{
+                fontWeight: 700,
+                fontSize: '2.2rem',
+                color: 'text.primary',
+              }}
+            >
+              AI Image Search
+            </Typography>
+            <Typography
+              variant="h6"
+              color="text.secondary"
+              sx={{
+                fontSize: '1.1rem',
+                fontWeight: 400,
+                lineHeight: 1.6,
+              }}
+            >
+              Find images by describing them in natural language
+            </Typography>
+          </Box>
+
+          <Divider sx={{ my: 3, borderColor: 'divider' }} />
+
+          {/* 搜尋區域 */}
+          <Box>
+            <SearchSection />
+          </Box>
+        </Paper>
+      </Container>
     </AppLayout>
   );
 }

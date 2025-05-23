@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Box,
   Card,
@@ -30,6 +30,46 @@ function QueueSection() {
     errors: {},
     retries: {}
   });
+
+  // Add debug logging for queue data changes
+  useEffect(() => {
+    if (data) {
+      console.log('📊 [Queue] Status data updated:', {
+        timestamp: new Date().toISOString(),
+        queue_count: data.queue,
+        queued_items: data.queued_items,
+        processing_count: data.processing?.length || 0,
+        processing_items: data.processing,
+        processing_workers: data.processing_workers,
+        done_count: data.done?.length || 0,
+        done_items: data.done,
+        errors: data.errors,
+        retries: data.retries
+      });
+      
+      // Log specific information about PDF files
+      const pdfFiles = data.queued_items?.filter(item => 
+        item.includes('/pdfs/') || item.toLowerCase().includes('.pdf')
+      ) || [];
+      if (pdfFiles.length > 0) {
+        console.log('📄 [Queue] PDF files in queue:', pdfFiles);
+      }
+      
+      const processingPdfFiles = data.processing?.filter(item => 
+        item.includes('/pdfs/') || item.toLowerCase().includes('.pdf')
+      ) || [];
+      if (processingPdfFiles.length > 0) {
+        console.log('🔄 [Queue] PDF files being processed:', processingPdfFiles);
+      }
+    }
+  }, [data]);
+
+  // Add debug logging for errors
+  useEffect(() => {
+    if (error) {
+      console.error('❌ [Queue] Error loading queue data:', error);
+    }
+  }, [error]);
 
   const deleteMutation = useMutation({
     mutationFn: deleteQueueItem,
