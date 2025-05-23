@@ -17,9 +17,9 @@ class SSEService {
       delete this.eventSources[type];
     }
 
-    // 立刻讀最新的兩個 key
-    const token = localStorage.getItem('access_token');
-    const tokenType = localStorage.getItem('token_type');
+    // 立刻讀最新的兩個 key，改用 sessionStorage
+    const token = sessionStorage.getItem('access_token');
+    const tokenType = sessionStorage.getItem('token_type');
     if (!token || !tokenType) {
       console.warn('[SSE] 無法連線，找不到 token');
       return;

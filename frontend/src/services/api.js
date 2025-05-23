@@ -19,13 +19,13 @@ api.interceptors.request.use(
       timestamp: new Date().toISOString()
     });
     
-    const token = localStorage.getItem('access_token');
-    const type  = localStorage.getItem('token_type');
+    const token = sessionStorage.getItem('access_token');
+    const type  = sessionStorage.getItem('token_type');
     if (token && type) {
       config.headers.Authorization = `${type} ${token}`;
       console.log('🔑 [API Auth] Token added to request');
     } else {
-      console.warn('⚠️ [API Auth] No token found in localStorage');
+      console.warn('⚠️ [API Auth] No token found in sessionStorage');
     }
     
     // 如果是 FormData，讓 axios 自動設定 multipart/form-data boundary

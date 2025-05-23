@@ -28,7 +28,7 @@ function Search() {
                 color: 'text.primary',
               }}
             >
-              AI 智能圖像搜索
+              AI Smart Image Search
             </Typography>
             <Typography
               variant="h6"
@@ -39,7 +39,7 @@ function Search() {
                 lineHeight: 1.6,
               }}
             >
-              透過自然語言描述或上傳圖片來搜尋相似圖像
+              Search similar images by your own words or by uploading an image
             </Typography>
           </Box>
 

@@ -169,7 +169,7 @@ export default function SearchSection() {
 
   const renderGrid = (items, isSearchResults = false) => {
     if (!items.length) {
-      return <Alert severity="info">沒有圖片可顯示。</Alert>;
+      return <Alert severity="info">No images to display.</Alert>;
     }
     return (
       <Grid container spacing={2}>
@@ -240,8 +240,8 @@ export default function SearchSection() {
     <>
       <Card>
       <CardHeader
-          title="圖像搜索功能"
-          subheader="搜索或瀏覽已上傳的圖像"
+          title="Image search function"
+          subheader="Search or browse uploaded images"
           sx={{
             backgroundColor: 'primary.main',
             '& .MuiCardHeader-subheader': {
@@ -255,27 +255,27 @@ export default function SearchSection() {
 
         <CardContent>
           <Tabs value={tab} onChange={handleTabChange} textColor="primary" indicatorColor="primary">
-            <Tab label="搜索" value="search" />
-            <Tab label="所有圖片" value="storage" />
+            <Tab label="search" value="search" />
+            <Tab label="all images" value="storage" />
           </Tabs>
 
           {tab === 'search' && (
             <Box component="form" onSubmit={handleSearch} sx={{ mt: 2 }}>
               {/* Search Mode Info */}
               <Alert severity="info" sx={{ mb: 3 }}>
-                您可以透過 <strong>文字描述</strong> 或 <strong>上傳圖片</strong> 來搜索（一次只能選擇一種方式）。
-                {imageFile ? ' 目前為圖片搜索模式。' : ' 目前為文字搜索模式。'}
+                You can search by <strong>text description</strong> or <strong>uploading an image</strong> (only one method can be selected at a time).
+                {imageFile ? ' Currently in image search mode.' : ' Currently in text search mode.'}
               </Alert>
               
               <Grid container spacing={2} alignItems="center">
                 <Grid item xs={12} md={8}>
                   <TextField
                     fullWidth
-                    label={imageFile ? "文字搜索已停用（已上傳圖片）" : "描述您要尋找的內容（例如：「花園裡的貓」）"}
+                    label={imageFile ? "Text search disabled (image uploaded)" : "Describe what you're looking for (e.g., 'cat in garden')"}
                     value={query}
                     onChange={e => setQuery(e.target.value)}
                     disabled={searchMutation.isLoading || imageFile}
-                    placeholder={imageFile ? "請移除圖片以啟用文字搜索" : "描述您要尋找的內容..."}
+                    placeholder={imageFile ? "Remove image to enable text search" : "Describe what you're looking for..."}
                   />
                 </Grid>
                 <Grid item>
@@ -286,7 +286,7 @@ export default function SearchSection() {
                     disabled={searchMutation.isLoading}
                     color={imageFile ? "success" : "primary"}
                   >
-                    {imageFile ? "更換圖片" : "上傳圖片"}
+                    {imageFile ? "Replace image" : "Upload image"}
                     <input
                       id="image-upload-input"
                       type="file"
@@ -326,10 +326,10 @@ export default function SearchSection() {
                       />
                       <Box>
                         <Typography variant="body1" fontWeight="bold" color="success.main">
-                          圖片搜索模式
+                          Image search mode
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          使用上傳的圖片進行搜索，文字輸入已停用。
+                          Using uploaded image for search, text input is disabled.
                         </Typography>
                       </Box>
                     </Box>
@@ -337,7 +337,7 @@ export default function SearchSection() {
                 )}
                 
                 <Grid item xs={12} md={8}>
-                  <Typography gutterBottom>搜索結果數量: {topK}</Typography>
+                  <Typography gutterBottom>Search results: {topK}</Typography>
                   <Slider
                     value={topK}
                     onChange={(_, v) => setTopK(v)}
@@ -357,16 +357,16 @@ export default function SearchSection() {
                     }
                     disabled={searchMutation.isLoading || (!query.trim() && !imageFile)}
                   >
-                    {searchMutation.isLoading ? '搜索中…' : imageFile ? '圖片搜索' : '文字搜索'}
+                    {searchMutation.isLoading ? 'Searching...' : imageFile ? 'Image search' : 'Text search'}
                   </Button>
                 </Grid>
                 {searchMutation.isError && (
                   <Grid item xs={12}>
                     <Alert severity="error">
-                      <strong>搜索錯誤：</strong> {searchMutation.error.message}
+                      <strong>Search error:</strong> {searchMutation.error.message}
                       <br />
                       <Typography variant="caption" sx={{ mt: 1 }}>
-                        請確保您提供了文字描述或上傳了圖片。
+                        Please ensure you provided a text description or uploaded an image.
                       </Typography>
                     </Alert>
                   </Grid>
@@ -377,7 +377,7 @@ export default function SearchSection() {
                 {renderGrid(searchResults.map(r => r.filename), true)}
                 {searchMutation.isSuccess && !searchResults.length && (
                   <Alert severity="info">
-                    未找到相關結果。請嘗試調整搜索關鍵字或上傳不同的圖片。
+                    No related results found. Please try adjusting the search keywords or uploading a different image.
                   </Alert>
                 )}
               </Box>
@@ -390,11 +390,11 @@ export default function SearchSection() {
                 <Box sx={{ textAlign: 'center', py: 4 }}>
                   <CircularProgress />
                   <Typography variant="body2" sx={{ mt: 2 }}>
-                    載入圖片中...
+                    Loading images...
                   </Typography>
                 </Box>
               ) : doneError ? (
-                <Alert severity="error">載入錯誤: {doneError.message}</Alert>
+                <Alert severity="error">Loading error: {doneError.message}</Alert>
               ) : (
                 renderGrid(doneData?.done_images || [])
               )}
@@ -424,7 +424,7 @@ export default function SearchSection() {
           color: 'white',
         }}>
           <Typography variant="h6" component="div">
-            圖片詳細資訊
+            Image details
           </Typography>
           <IconButton
             onClick={handleCloseModal}
@@ -449,19 +449,19 @@ export default function SearchSection() {
               />
               <Box sx={{ p: 3 }}>
                 <Typography variant="h6" gutterBottom color="primary">
-                  檔案資訊
+                  File information
                 </Typography>
                 <Typography variant="body1" gutterBottom>
-                  <strong>檔案名稱：</strong> {selectedImage.filename.split('/').pop()}
+                  <strong>File name:</strong> {selectedImage.filename.split('/').pop()}
                 </Typography>
                 {selectedImage.similarity !== null && (
                   <Typography variant="body1" gutterBottom>
-                    <strong>相似度分數：</strong> {(selectedImage.similarity * 100).toFixed(2)}%
+                    <strong>Similarity score:</strong> {(selectedImage.similarity * 100).toFixed(2)}%
                   </Typography>
                 )}
                 
                 <Typography variant="h6" gutterBottom color="primary" sx={{ mt: 3 }}>
-                  圖片描述
+                  Image description
                 </Typography>
                 <Box
                   sx={{
@@ -472,7 +472,7 @@ export default function SearchSection() {
                   }}
                 >
                   <Typography variant="body1" sx={{ lineHeight: 1.6 }}>
-                    {selectedImage.caption || '無可用描述'}
+                    {selectedImage.caption || 'No description available'}
                   </Typography>
                 </Box>
               </Box>
@@ -481,7 +481,7 @@ export default function SearchSection() {
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={handleCloseModal} variant="contained">
-            關閉
+            Close
           </Button>
         </DialogActions>
       </Dialog>

@@ -37,10 +37,10 @@ const AuthService = {
     return response.json(); // e.g. { message: "Signup successful" }
   },
 
-  // 登出：清除前端 token
+  // 登出：清除前端 token，改用 sessionStorage
   logout: () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('token_type');
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('token_type');
   },
 };
 
