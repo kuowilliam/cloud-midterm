@@ -233,17 +233,17 @@ export default function UploadSection() {
               </Button>
             </Box>
 
-            {zipError && (
+              {zipError && (
               <Alert severity="error" sx={{ mt: 2, borderRadius: 2 }}>
-                {zipError}
-              </Alert>
-            )}
+                  {zipError}
+                </Alert>
+              )}
             
-            {zipResult && (
+              {zipResult && (
               <Alert severity="success" sx={{ mt: 2, borderRadius: 2 }}>
-                {zipResult.message}
-              </Alert>
-            )}
+                  {zipResult.message}
+                </Alert>
+              )}
           </CardContent>
         </Card>
       </Grid>
@@ -318,17 +318,17 @@ export default function UploadSection() {
               </Button>
             </Box>
 
-            {pdfError && (
+              {pdfError && (
               <Alert severity="error" sx={{ mt: 2, borderRadius: 2 }}>
-                {pdfError}
-              </Alert>
-            )}
+                  {pdfError}
+                </Alert>
+              )}
             
-            {pdfResult && (
+              {pdfResult && (
               <Alert severity="success" sx={{ mt: 2, borderRadius: 2 }}>
-                {pdfResult.message}
-              </Alert>
-            )}
+                  {pdfResult.message}
+                </Alert>
+              )}
           </CardContent>
         </Card>
       </Grid>

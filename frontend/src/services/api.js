@@ -135,21 +135,35 @@ export const getMonitorEvents = async (limit = 50) => {
 
 // 圖像搜尋，可附帶文字與檔案
 export const searchImages = async (query, imageFile, topK = 5) => {
+  console.log('🔍 [API] searchImages called with:', { query, imageFile: imageFile?.name, topK });
+  
   const formData = new FormData();
   
-  // 將 query 加入 FormData（如果有的話）
-  if (query && query.trim()) {
-    formData.append('query', query.trim());
-  }
-  
-  // 將 image 加入 FormData（如果有的話）
+  // 修正後端驗證邏輯：只能提供文字或圖片其中一個，不能同時提供
+  // 如果同時提供，優先使用圖片搜索
   if (imageFile) {
+    // 只使用圖片搜索，不加入文字查詢
     formData.append('image', imageFile);
+    console.log('🔍 [API] Image search mode - using image only');
+  } else if (query && query.trim()) {
+    // 只使用文字搜索
+    formData.append('query', query.trim());
+    console.log('🔍 [API] Text search mode - using query only');
+  } else {
+    // 兩者都沒有，拋出錯誤
+    throw new Error('Must provide either text query or image file for search');
   }
 
-  // top_k 作為 query parameter
-  const response = await api.post(`/search?top_k=${topK}`, formData);
-  return response.data;
+  try {
+    // top_k 作為 query parameter
+    console.log('🔍 [API] Making search request to:', `/search?top_k=${topK}`);
+    const response = await api.post(`/search?top_k=${topK}`, formData);
+    console.log('✅ [API] Search response received:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('❌ [API] Search request failed:', error);
+    throw error;
+  }
 };
 
 // 取得影像路徑 URL

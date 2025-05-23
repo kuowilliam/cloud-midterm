@@ -167,7 +167,7 @@ export default function AppLayout({ children }) {
                 sx={{ py: 1.5, fontSize: '0.95rem' }}
             >
               <ListItemIcon><DashboardIcon fontSize="small" /></ListItemIcon>
-                <ListItemText>Dashboard</ListItemText>
+              <ListItemText>Dashboard</ListItemText>
             </MenuItem>
             <MenuItem
               onClick={() => { navigate('/search'); handleMenuClose(); }}
@@ -183,12 +183,12 @@ export default function AppLayout({ children }) {
                 sx={{ py: 1.5, fontSize: '0.95rem' }}
             >
               <ListItemIcon><PictureAsPdfIcon fontSize="small" /></ListItemIcon>
-                <ListItemText>PDF Search</ListItemText>
+              <ListItemText>PDF Search</ListItemText>
             </MenuItem>
               <Divider sx={{ my: 1 }} />
               <MenuItem onClick={handleReset} sx={{ py: 1.5 }}>
               <ListItemIcon><RefreshIcon fontSize="small" color="error" /></ListItemIcon>
-                <ListItemText sx={{ color: 'error.main' }}>Reset System</ListItemText>
+              <ListItemText sx={{ color: 'error.main' }}>Reset System</ListItemText>
             </MenuItem>
           </Menu>
 
@@ -216,7 +216,7 @@ export default function AppLayout({ children }) {
               }}
             startIcon={isAuthenticated ? <LogoutIcon /> : <LoginIcon />}
           >
-              {isAuthenticated ? 'Logout' : 'Login'}
+            {isAuthenticated ? 'Logout' : 'Login'}
           </Button>
         </Toolbar>
       </AppBar>

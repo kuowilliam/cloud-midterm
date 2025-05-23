@@ -39,16 +39,16 @@ export default function Dashboard() {
                 mb: 3
               }}
             >
-              System Monitoring
-            </Typography>
+          System Monitoring
+        </Typography>
             
             <Box sx={{ mb: 4 }}>
-              <WorkerHealthSection />
+        <WorkerHealthSection />
             </Box>
             
             <Box>
-              <EventMonitorSection />
-            </Box>
+        <EventMonitorSection />
+      </Box>
           </Paper>
 
           {/* Right Main Operation Area */}
@@ -75,7 +75,7 @@ export default function Dashboard() {
                 }}
               >
                 Image Processing Management Center
-              </Typography>
+        </Typography>
               <Typography 
                 variant="h6" 
                 color="text.secondary" 
@@ -86,14 +86,14 @@ export default function Dashboard() {
                 }}
               >
                 Monitor and manage your image processing workflow
-              </Typography>
+        </Typography>
             </Box>
 
             <Divider sx={{ my: 3, borderColor: 'divider' }} />
 
             {/* Upload Area */}
             <Box sx={{ mb: 4 }}>
-              <UploadSection />
+        <UploadSection />
             </Box>
 
             {/* Monitoring Management Area */}
@@ -110,20 +110,20 @@ export default function Dashboard() {
                 }}
               >
                 Task Monitoring & Management
-              </Typography>
+        </Typography>
 
-              <Grid container spacing={3} direction="column">
-                <Grid item>
+        <Grid container spacing={3} direction="column">
+          <Grid item>
                   <QueueSection />
-                </Grid>
-                <Grid item>
+          </Grid>
+          <Grid item>
                   <ProcessingSection />
-                </Grid>
-                <Grid item>
+          </Grid>
+          <Grid item>
                   <DoneSection />
-                </Grid>
-              </Grid>
-            </Box>
+          </Grid>
+        </Grid>
+      </Box>
           </Paper>
         </Box>
       </Container>

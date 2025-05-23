@@ -58,7 +58,13 @@ export default function SearchSection() {
   const searchMutation = useMutation({
     mutationFn: ({ query, imageFile, topK }) =>
       searchImages(query, imageFile, topK),
-    onSuccess: data => setSearchResults(data.results || []),
+    onSuccess: (data) => {
+      console.log('✅ [SearchSection] Search successful, received data:', data);
+      setSearchResults(data.results || []);
+    },
+    onError: (error) => {
+      console.error('❌ [SearchSection] Search failed:', error);
+    },
   });
 
   // Query for all done images - disabled by default
@@ -163,7 +169,7 @@ export default function SearchSection() {
 
   const renderGrid = (items, isSearchResults = false) => {
     if (!items.length) {
-      return <Alert severity="info">No images to display.</Alert>;
+      return <Alert severity="info">沒有圖片可顯示。</Alert>;
     }
     return (
       <Grid container spacing={2}>
@@ -234,8 +240,8 @@ export default function SearchSection() {
     <>
       <Card>
       <CardHeader
-          title="Image Search"
-          subheader="Search or browse uploaded images"
+          title="圖像搜索功能"
+          subheader="搜索或瀏覽已上傳的圖像"
           sx={{
             backgroundColor: 'primary.main',
             '& .MuiCardHeader-subheader': {
@@ -249,20 +255,27 @@ export default function SearchSection() {
 
         <CardContent>
           <Tabs value={tab} onChange={handleTabChange} textColor="primary" indicatorColor="primary">
-            <Tab label="Search" value="search" />
-            <Tab label="All Images" value="storage" />
+            <Tab label="搜索" value="search" />
+            <Tab label="所有圖片" value="storage" />
           </Tabs>
 
           {tab === 'search' && (
             <Box component="form" onSubmit={handleSearch} sx={{ mt: 2 }}>
+              {/* Search Mode Info */}
+              <Alert severity="info" sx={{ mb: 3 }}>
+                您可以透過 <strong>文字描述</strong> 或 <strong>上傳圖片</strong> 來搜索（一次只能選擇一種方式）。
+                {imageFile ? ' 目前為圖片搜索模式。' : ' 目前為文字搜索模式。'}
+              </Alert>
+              
               <Grid container spacing={2} alignItems="center">
                 <Grid item xs={12} md={8}>
                   <TextField
                     fullWidth
-                    label="Search Query"
+                    label={imageFile ? "文字搜索已停用（已上傳圖片）" : "描述您要尋找的內容（例如：「花園裡的貓」）"}
                     value={query}
                     onChange={e => setQuery(e.target.value)}
-                    disabled={searchMutation.isLoading}
+                    disabled={searchMutation.isLoading || imageFile}
+                    placeholder={imageFile ? "請移除圖片以啟用文字搜索" : "描述您要尋找的內容..."}
                   />
                 </Grid>
                 <Grid item>
@@ -271,8 +284,9 @@ export default function SearchSection() {
                     component="label"
                     startIcon={<FileUploadIcon />}
                     disabled={searchMutation.isLoading}
+                    color={imageFile ? "success" : "primary"}
                   >
-                    Upload
+                    {imageFile ? "更換圖片" : "上傳圖片"}
                     <input
                       id="image-upload-input"
                       type="file"
@@ -281,14 +295,49 @@ export default function SearchSection() {
                       onChange={handleImageSelect}
                     />
                   </Button>
-                  {imagePreview && (
-                    <IconButton onClick={clearImage}>
+                  {imageFile && (
+                    <IconButton onClick={clearImage} sx={{ ml: 1 }}>
                       <ClearIcon />
                     </IconButton>
                   )}
                 </Grid>
+                
+                {/* Image Preview */}
+                {imagePreview && (
+                  <Grid item xs={12}>
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: 2, 
+                      p: 2, 
+                      backgroundColor: '#f5f5f5', 
+                      borderRadius: 2,
+                      border: '2px solid #4caf50'
+                    }}>
+                      <img 
+                        src={imagePreview} 
+                        alt="Search preview" 
+                        style={{ 
+                          width: 80, 
+                          height: 80, 
+                          objectFit: 'cover', 
+                          borderRadius: 8 
+                        }} 
+                      />
+                      <Box>
+                        <Typography variant="body1" fontWeight="bold" color="success.main">
+                          圖片搜索模式
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          使用上傳的圖片進行搜索，文字輸入已停用。
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Grid>
+                )}
+                
                 <Grid item xs={12} md={8}>
-                  <Typography gutterBottom>Top K: {topK}</Typography>
+                  <Typography gutterBottom>搜索結果數量: {topK}</Typography>
                   <Slider
                     value={topK}
                     onChange={(_, v) => setTopK(v)}
@@ -308,12 +357,18 @@ export default function SearchSection() {
                     }
                     disabled={searchMutation.isLoading || (!query.trim() && !imageFile)}
                   >
-                    {searchMutation.isLoading ? 'Searching…' : 'Search'}
+                    {searchMutation.isLoading ? '搜索中…' : imageFile ? '圖片搜索' : '文字搜索'}
                   </Button>
                 </Grid>
                 {searchMutation.isError && (
                   <Grid item xs={12}>
-                    <Alert severity="error">{searchMutation.error.message}</Alert>
+                    <Alert severity="error">
+                      <strong>搜索錯誤：</strong> {searchMutation.error.message}
+                      <br />
+                      <Typography variant="caption" sx={{ mt: 1 }}>
+                        請確保您提供了文字描述或上傳了圖片。
+                      </Typography>
+                    </Alert>
                   </Grid>
                 )}
               </Grid>
@@ -321,7 +376,9 @@ export default function SearchSection() {
               <Box sx={{ mt: 4 }}>
                 {renderGrid(searchResults.map(r => r.filename), true)}
                 {searchMutation.isSuccess && !searchResults.length && (
-                  <Alert severity="info">No results found.</Alert>
+                  <Alert severity="info">
+                    未找到相關結果。請嘗試調整搜索關鍵字或上傳不同的圖片。
+                  </Alert>
                 )}
               </Box>
             </Box>
@@ -332,9 +389,12 @@ export default function SearchSection() {
               {doneLoading ? (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
                   <CircularProgress />
+                  <Typography variant="body2" sx={{ mt: 2 }}>
+                    載入圖片中...
+                  </Typography>
                 </Box>
               ) : doneError ? (
-                <Alert severity="error">{doneError.message}</Alert>
+                <Alert severity="error">載入錯誤: {doneError.message}</Alert>
               ) : (
                 renderGrid(doneData?.done_images || [])
               )}
@@ -364,7 +424,7 @@ export default function SearchSection() {
           color: 'white',
         }}>
           <Typography variant="h6" component="div">
-            Image Details
+            圖片詳細資訊
           </Typography>
           <IconButton
             onClick={handleCloseModal}
@@ -389,19 +449,19 @@ export default function SearchSection() {
               />
               <Box sx={{ p: 3 }}>
                 <Typography variant="h6" gutterBottom color="primary">
-                  File Information
+                  檔案資訊
                 </Typography>
                 <Typography variant="body1" gutterBottom>
-                  <strong>File Name:</strong> {selectedImage.filename.split('/').pop()}
+                  <strong>檔案名稱：</strong> {selectedImage.filename.split('/').pop()}
                 </Typography>
                 {selectedImage.similarity !== null && (
                   <Typography variant="body1" gutterBottom>
-                    <strong>Similarity Score:</strong> {(selectedImage.similarity * 100).toFixed(2)}%
+                    <strong>相似度分數：</strong> {(selectedImage.similarity * 100).toFixed(2)}%
                   </Typography>
                 )}
                 
                 <Typography variant="h6" gutterBottom color="primary" sx={{ mt: 3 }}>
-                  Image Description
+                  圖片描述
                 </Typography>
                 <Box
                   sx={{
@@ -412,7 +472,7 @@ export default function SearchSection() {
                   }}
                 >
                   <Typography variant="body1" sx={{ lineHeight: 1.6 }}>
-                    {selectedImage.caption || 'No description available'}
+                    {selectedImage.caption || '無可用描述'}
                   </Typography>
                 </Box>
               </Box>
@@ -421,7 +481,7 @@ export default function SearchSection() {
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={handleCloseModal} variant="contained">
-            Close
+            關閉
           </Button>
         </DialogActions>
       </Dialog>

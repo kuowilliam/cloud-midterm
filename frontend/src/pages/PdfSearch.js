@@ -74,8 +74,8 @@ function PdfSearchPage() {
               }}
             >
               <PdfIcon fontSize="large" color="primary" />
-              PDF Document Search
-            </Typography>
+          PDF Document Search
+        </Typography>
             <Typography
               variant="h6"
               color="text.secondary"
@@ -119,16 +119,16 @@ function PdfSearchPage() {
               }}
             >
               Search PDF Content
-            </Typography>
+        </Typography>
 
             <Box component="form" onSubmit={handleSearch}>
-              <TextField
-                fullWidth
+            <TextField
+              fullWidth
                 label="Please enter your question about the PDF content"
-                variant="outlined"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                disabled={isLoading}
+              variant="outlined"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              disabled={isLoading}
                 sx={{ mb: 3 }}
                 InputProps={{
                   startAdornment: (
@@ -138,13 +138,13 @@ function PdfSearchPage() {
                   ),
                 }}
                 placeholder="e.g., What is the main content of this document?"
-              />
+            />
 
-              <Button
-                type="submit"
-                variant="contained"
+            <Button
+              type="submit"
+              variant="contained"
                 size="large"
-                disabled={isLoading}
+              disabled={isLoading}
                 sx={{
                   py: 1.5,
                   px: 4,
@@ -155,23 +155,23 @@ function PdfSearchPage() {
                 startIcon={isLoading ? <CircularProgress size={20} /> : <SearchIcon />}
               >
                 {isLoading ? 'Searching...' : 'Search PDF Content'}
-              </Button>
+            </Button>
             </Box>
 
-            {error && (
+          {error && (
               <Alert severity="error" sx={{ mt: 3, borderRadius: 2 }}>
-                {error}
-              </Alert>
-            )}
+              {error}
+            </Alert>
+          )}
 
-            {isLoading && !results && (
+          {isLoading && !results && (
               <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
                 <CircularProgress size={40} />
               </Box>
-            )}
+          )}
 
-            {results && (
-              <Box sx={{ mt: 4 }}>
+          {results && (
+            <Box sx={{ mt: 4 }}>
                 <Typography
                   variant="h5"
                   gutterBottom
@@ -182,7 +182,7 @@ function PdfSearchPage() {
                   }}
                 >
                   Search Results
-                </Typography>
+              </Typography>
 
                 <Card
                   elevation={3}
@@ -191,20 +191,20 @@ function PdfSearchPage() {
                     overflow: 'hidden',
                   }}
                 >
-                  {results.top_result?.filename && (
-                    <CardMedia
-                      component="img"
-                      alt={`Page from ${results.top_result.filename}`}
-                      height="600"
-                      image={getImageUrl(results.top_result.filename)}
+                {results.top_result?.filename && (
+                  <CardMedia
+                    component="img"
+                    alt={`Page from ${results.top_result.filename}`}
+                    height="600"
+                    image={getImageUrl(results.top_result.filename)}
                       sx={{
                         objectFit: 'contain',
                         borderBottom: '1px solid #eee',
                         p: 2,
                         backgroundColor: '#fafafa',
                       }}
-                    />
-                  )}
+                  />
+                )}
 
                   <CardContent sx={{ p: 4 }}>
                     <Typography
@@ -232,8 +232,8 @@ function PdfSearchPage() {
                     >
                       <Typography variant="body1" sx={{ lineHeight: 1.8 }}>
                         {results.gemini_answer || 'Unable to provide relevant answer'}
-                      </Typography>
-                    </Paper>
+                  </Typography>
+                  </Paper>
 
                     <Box sx={{ mt: 3 }}>
                       <Typography variant="body1" gutterBottom sx={{ fontWeight: 500 }}>
@@ -241,16 +241,16 @@ function PdfSearchPage() {
                         <span style={{ color: '#1976d2' }}>
                           {results.top_result?.filename}
                         </span>
-                      </Typography>
+                  </Typography>
                       <Typography variant="body2" color="text.secondary">
                         Similarity Score: {results.top_result?.similarity?.toFixed(3)}
-                      </Typography>
+                  </Typography>
                     </Box>
-                  </CardContent>
-                </Card>
-              </Box>
-            )}
-          </Paper>
+                </CardContent>
+              </Card>
+            </Box>
+          )}
+        </Paper>
         </Paper>
       </Container>
     </AppLayout>

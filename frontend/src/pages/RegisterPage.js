@@ -25,52 +25,52 @@ import {
 import AuthService from '../services/AuthService';
 
 const RegisterPage = () => {
-  const [username, setUsername] = useState('');
+    const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+    const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        setSuccess('');
 
-    if (password !== confirmPassword) {
+        if (password !== confirmPassword) {
       setError('Password confirmation does not match');
       return;
     }
 
     if (password.length < 6) {
       setError('Password must be at least 6 characters long');
-      return;
-    }
+            return;
+        }
 
     setLoading(true);
 
-    try {
-      await AuthService.register(username, password);
+        try {
+            await AuthService.register(username, password);
       setSuccess('Registration successful! Redirecting to login page...');
-      setTimeout(() => {
-        navigate('/login');
+            setTimeout(() => {
+                navigate('/login');
       }, 3000);
-    } catch (err) {
+        } catch (err) {
       setError(err.message || 'Registration failed, please try again later');
-      console.error('Registration error:', err);
+            console.error('Registration error:', err);
     } finally {
       setLoading(false);
-    }
-  };
+        }
+    };
 
   const handleClickShowPassword = () => setShowPassword(!showPassword);
   const handleClickShowConfirmPassword = () => setShowConfirmPassword(!showConfirmPassword);
 
-  return (
+    return (
     <Box
       sx={{
         minHeight: '100vh',
@@ -120,9 +120,9 @@ const RegisterPage = () => {
               fullWidth
               label="Username"
               variant="outlined"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
               sx={{ mb: 3 }}
               disabled={loading}
               InputProps={{
@@ -137,10 +137,10 @@ const RegisterPage = () => {
             <TextField
               fullWidth
               label="Email (Optional)"
-              type="email"
+                            type="email"
               variant="outlined"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
               sx={{ mb: 3 }}
               disabled={loading}
               InputProps={{
@@ -158,9 +158,9 @@ const RegisterPage = () => {
               label="Password"
               type={showPassword ? 'text' : 'password'}
               variant="outlined"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
               sx={{ mb: 3 }}
               disabled={loading}
               InputProps={{
@@ -188,9 +188,9 @@ const RegisterPage = () => {
               label="Confirm Password"
               type={showConfirmPassword ? 'text' : 'password'}
               variant="outlined"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            required
               sx={{ mb: 3 }}
               disabled={loading}
               InputProps={{
@@ -275,7 +275,7 @@ const RegisterPage = () => {
         </Paper>
       </Container>
     </Box>
-  );
+    );
 };
 
 export default RegisterPage; 
