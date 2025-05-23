@@ -46,7 +46,7 @@ def dms_to_decimal(dms, ref):
 # 監控與回收設定常數
 HEARTBEAT_PREFIX      = "heartbeat:"
 PROCESSING_TS_PREFIX  = "processing_ts:"
-PROCESSING_TIMEOUT    = 20
+PROCESSING_TIMEOUT    = 30
 MONITOR_INTERVAL      = 2
 SSE_PUSH_INTERVAL  = 1
 
@@ -579,5 +579,9 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
     u = users.get(form.username)
     if not u or not verify_password(form.password, u["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # 確保登錄的用戶在 active_users 中
+    redis.sadd("active_users", form.username)
+    
     token = create_access_token({"sub": form.username})
     return {"access_token": token, "token_type": "bearer"}

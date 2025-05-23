@@ -1,3 +1,5 @@
+// src/components/ProcessingSection.js
+
 import React from 'react';
 import {
   Card,
@@ -8,13 +10,13 @@ import {
   ListItemText,
   Typography,
   Divider,
-  Chip,
   Box,
+  Chip,
   CircularProgress,
 } from '@mui/material';
 import useSSE from '../hooks/useSSE';
 
-function ProcessingSection() {
+export default function ProcessingSection() {
   const { data, isLoading, error } = useSSE('status', {
     queue: 0,
     queued_items: [],
@@ -28,11 +30,11 @@ function ProcessingSection() {
   if (isLoading) {
     return (
       <Card id="processing-section" sx={{ mb: 4 }}>
-        <CardHeader 
-          title="Processing" 
+        <CardHeader
+          title="Processing"
           subheader="Images currently being processed"
-          sx={{ 
-            backgroundColor: 'warning.main', 
+          sx={{
+            backgroundColor: 'warning.main',
             color: 'white',
             '& .MuiCardHeader-subheader': {
               color: 'rgba(255, 255, 255, 0.7)',
@@ -49,11 +51,11 @@ function ProcessingSection() {
   if (error) {
     return (
       <Card id="processing-section" sx={{ mb: 4 }}>
-        <CardHeader 
-          title="Processing" 
+        <CardHeader
+          title="Processing"
           subheader="Images currently being processed"
-          sx={{ 
-            backgroundColor: 'warning.main', 
+          sx={{
+            backgroundColor: 'warning.main',
             color: 'white',
             '& .MuiCardHeader-subheader': {
               color: 'rgba(255, 255, 255, 0.7)',
@@ -71,12 +73,12 @@ function ProcessingSection() {
   const processingWorkers = data?.processing_workers || {};
 
   return (
-    <Card id="processing-section" sx={{ mb: 4, width: '1000px' }}>
-      <CardHeader 
+    <Card id="processing-section" sx={{ mb: 4 }}>
+      <CardHeader
         title={`Processing (${processingItems.length})`}
         subheader="Images currently being processed"
-        sx={{ 
-          backgroundColor: 'warning.main', 
+        sx={{
+          backgroundColor: 'warning.main',
           color: 'white',
           '& .MuiCardHeader-subheader': {
             color: 'rgba(255, 255, 255, 0.7)',
@@ -89,41 +91,49 @@ function ProcessingSection() {
             No images being processed
           </Typography>
         ) : (
-          <List sx={{ maxHeight: '300px', overflow: 'auto' }}>
-            {processingItems.map((item, index) => (
-              <React.Fragment key={`${item}-${index}`}>
-                <ListItem>
-                  <ListItemText
-                    primary={
-                      <Box component="div" sx={{ 
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}>
-                        <span>{item}</span>
-                        {processingWorkers[item] && (
-                          <Chip 
-                            label={processingWorkers[item]} 
-                            color="primary" 
-                            size="small" 
-                            sx={{ ml: 2 }}
-                          />
-                        )}
-                      </Box>
-                    }
-                  />
-                </ListItem>
-                {index < processingItems.length - 1 && <Divider />}
-              </React.Fragment>
-            ))}
+          <List sx={{ maxHeight: 300, overflow: 'auto' }}>
+            {processingItems.map((path, idx) => {
+              const workerName = processingWorkers[path];
+              return (
+                <React.Fragment key={path + idx}>
+                  <ListItem sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    py: 1
+                  }}>
+                    <ListItemText 
+                      primary={
+                        <Box component="div" sx={{ 
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: '400px'
+                        }}>
+                          {path}
+                        </Box>
+                      }
+                    />
+                    {workerName && (
+                      <Chip
+                        label={workerName}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                        sx={{ 
+                          fontWeight: 600,
+                          backgroundColor: 'rgba(25, 118, 210, 0.1)'
+                        }}
+                      />
+                    )}
+                  </ListItem>
+                  {idx < processingItems.length - 1 && <Divider />}
+                </React.Fragment>
+              );
+            })}
           </List>
         )}
       </CardContent>
     </Card>
   );
 }
-
-export default ProcessingSection;

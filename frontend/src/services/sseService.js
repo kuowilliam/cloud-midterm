@@ -1,43 +1,74 @@
-// SSE (Server-Sent Events) service for real-time data
+// src/services/sseService.js
+
+import { EventSourcePolyfill } from 'event-source-polyfill';
+
+const API_URL = 'http://localhost:8000';  // 後端地址
+
 class SSEService {
   constructor() {
     this.eventSources = {};
-    this.listeners = {
-      status: [],
-      workerStatus: [],
-      monitorEvents: []
-    };
+    this.listeners = { status: [], workerStatus: [], monitorEvents: [] };
   }
 
-  // Connect to an SSE endpoint
   connect(endpoint, type) {
+    // 先關掉舊的
     if (this.eventSources[type]) {
-      this.disconnect(type);
+      this.eventSources[type].close();
+      delete this.eventSources[type];
     }
 
-    const eventSource = new EventSource(`http://localhost:8000${endpoint}`);
-    
-    eventSource.onmessage = (event) => {
+    // 立刻讀最新的兩個 key
+    const token = localStorage.getItem('access_token');
+    const tokenType = localStorage.getItem('token_type');
+    if (!token || !tokenType) {
+      console.warn('[SSE] 無法連線，找不到 token');
+      return;
+    }
+
+    // 用 polyfill 版本的 EventSource
+    const url = `${API_URL}${endpoint}`;
+    const es = new EventSourcePolyfill(url, {
+      headers: { Authorization: `${tokenType} ${token}` },
+      heartbeatTimeout: 45000,
+    });
+
+    es.onmessage = (e) => {
       try {
-        const data = JSON.parse(event.data);
-        this.notifyListeners(type, data);
-      } catch (error) {
-        console.error(`Error parsing SSE data for ${type}:`, error);
+        const data = JSON.parse(e.data);
+        console.log(`📡 [SSE:${type}] Data received:`, {
+          timestamp: new Date().toISOString(),
+          type: type,
+          data: data
+        });
+        (this.listeners[type] || []).forEach(cb => cb(data));
+      } catch (err) {
+        console.error(`❌ [SSE:${type}] JSON parse error:`, err);
+        console.error(`❌ [SSE:${type}] Raw data:`, e.data);
       }
     };
 
-    eventSource.onerror = (error) => {
-      console.error(`SSE connection error for ${type}:`, error);
-      this.disconnect(type);
-      // Try to reconnect after a delay
+    es.onopen = () => {
+      console.log(`✅ [SSE:${type}] Connection established to ${url}`);
+    };
+
+    es.onerror = (err) => {
+      console.error(`❌ [SSE:${type}] Connection error:`, {
+        error: err,
+        readyState: es.readyState,
+        url: url,
+        timestamp: new Date().toISOString()
+      });
+      // 關掉並 5 秒後重試
+      es.close();
+      delete this.eventSources[type];
+      console.log(`🔄 [SSE:${type}] Will retry connection in 5 seconds...`);
       setTimeout(() => this.connect(endpoint, type), 5000);
     };
 
-    this.eventSources[type] = eventSource;
-    return eventSource;
+    this.eventSources[type] = es;
+    return es;
   }
 
-  // Disconnect from an SSE endpoint
   disconnect(type) {
     if (this.eventSources[type]) {
       this.eventSources[type].close();
@@ -45,66 +76,28 @@ class SSEService {
     }
   }
 
-  // Disconnect from all SSE endpoints
   disconnectAll() {
-    Object.keys(this.eventSources).forEach(type => {
-      this.disconnect(type);
-    });
+    Object.keys(this.eventSources).forEach(t => this.disconnect(t));
   }
 
-  // Add a listener for a specific type of SSE data
   addListener(type, callback) {
-    if (!this.listeners[type]) {
-      this.listeners[type] = [];
-    }
+    this.listeners[type] = this.listeners[type] || [];
     this.listeners[type].push(callback);
 
-    // Connect to the appropriate endpoint if not already connected
     if (!this.eventSources[type]) {
-      switch (type) {
-        case 'status':
-          this.connect('/status', type);
-          break;
-        case 'workerStatus':
-          this.connect('/monitor/worker', type);
-          break;
-        case 'monitorEvents':
-          this.connect('/monitor/events', type);
-          break;
-        default:
-          console.warn(`Unknown SSE type: ${type}`);
-      }
+      if (type === 'status') this.connect('/status', 'status');
+      if (type === 'workerStatus') this.connect('/monitor/worker', 'workerStatus');
+      if (type === 'monitorEvents') this.connect('/monitor/events', 'monitorEvents');
     }
 
-    // Return a function to remove this listener
+    // 回傳解除監聽的函式
     return () => {
-      this.removeListener(type, callback);
-    };
-  }
-
-  // Remove a listener
-  removeListener(type, callback) {
-    if (this.listeners[type]) {
       this.listeners[type] = this.listeners[type].filter(cb => cb !== callback);
-      
-      // If no more listeners for this type, disconnect
       if (this.listeners[type].length === 0) {
         this.disconnect(type);
       }
-    }
-  }
-
-  // Notify all listeners of a specific type
-  notifyListeners(type, data) {
-    if (this.listeners[type]) {
-      this.listeners[type].forEach(callback => {
-        callback(data);
-      });
-    }
+    };
   }
 }
 
-// Create a singleton instance
-const sseService = new SSEService();
-
-export default sseService;
+export default new SSEService();

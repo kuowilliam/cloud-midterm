@@ -135,6 +135,7 @@ while True:
         # --- 拿到一條真正要處理的任務，下面沿用你現有的邏輯，只是把 `user` 換成 selected_user ---
         user = selected_user
         start_time = time.time()
+        orig_image_path = image_path  # <== 新增：記住原來的路徑
         redis.set(f"processing_ts:{user}:{image_path}", start_time)
         
         print(f"🔄 Processing image: {image_path} for user {user} by {WORKER_NAME}")
@@ -208,10 +209,10 @@ while True:
                         json.dump(pdf_meta, open(user_pdf_meta, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
                     # 標記完成
-                    redis.delete(f"processing_ts:{user}:{image_path}")
-                    redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", image_path)
-                    redis.hdel("processing_workers", f"{user}:{image_path}")
-                    redis.sadd(f"{DONE_SET_PREFIX}:{user}", image_path)
+                    redis.delete(f"processing_ts:{user}:{orig_image_path}")
+                    redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", orig_image_path)
+                    redis.hdel("processing_workers", f"{user}:{orig_image_path}")
+                    redis.sadd(f"{DONE_SET_PREFIX}:{user}", orig_image_path)
 
                     print(f"✅ {WORKER_NAME} done {image_path} for user {user} with Cohere embedding")
 
@@ -296,10 +297,35 @@ while True:
                         # 刪除原始 .heic
                         os.remove(full_path)
 
+                        # 保存舊的.heic路徑用於移除
+                        orig_heic_path = orig_image_path  # 暫存原始.heic路徑
+                        
                         # 替換 image_path 與 full_path 為新的 .jpg
                         image_path = new_rel_path
                         full_path = new_abs_path
-
+                        
+                        # --- HEIC ➜ JPG 成功後同步更新所有Redis keys ---
+                        # 0. 準備新舊key
+                        old_key = f"{user}:{orig_heic_path}"
+                        new_key = f"{user}:{new_rel_path}"
+                        
+                        # 1. 移除舊 processing 標記
+                        redis.delete(f"processing_ts:{user}:{orig_heic_path}")
+                        redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", orig_heic_path)
+                        redis.hdel("processing_workers", old_key)
+                        
+                        # 2. 加入新 processing 標記
+                        redis.set(f"processing_ts:{user}:{new_rel_path}", time.time())
+                        redis.sadd(f"{PROCESSING_SET_PREFIX}:{user}", new_rel_path)
+                        redis.hset("processing_workers", new_key, WORKER_NAME)
+                        
+                        # 3. 更新變數，讓後面清理 / done_set 都用 .jpg
+                        orig_image_path = new_rel_path  # 後續 finally/清理用
+                        
+                        # 4. done_set處理
+                        redis.sadd(f"{DONE_SET_PREFIX}:{user}", new_rel_path)
+                        redis.srem(f"{DONE_SET_PREFIX}:{user}", orig_heic_path)
+                        
                         print(f"🖼️ HEIC converted and replaced: {image_path}")
 
                     except Exception as e:
@@ -328,10 +354,10 @@ while True:
                 faiss.write_index(index, user_index)
 
             # 處理完成：移除 processing 記錄、加入 done 並清 processing_workers
-            redis.delete(f"processing_ts:{user}:{image_path}")
-            redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", image_path)
-            redis.hdel("processing_workers", f"{user}:{image_path}")
-            redis.sadd(f"{DONE_SET_PREFIX}:{user}", image_path)
+            redis.delete(f"processing_ts:{user}:{orig_image_path}")
+            redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", orig_image_path)
+            redis.hdel("processing_workers", f"{user}:{orig_image_path}")
+            redis.sadd(f"{DONE_SET_PREFIX}:{user}", orig_image_path)
 
             elapsed = time.time() - start_time
             print(f"✅ {WORKER_NAME} done {image_path} for user {user} in {elapsed:.2f}s: {caption}")
@@ -343,14 +369,14 @@ while True:
             print(traceback.format_exc())
 
             # 清理 processing set
-            redis.delete(f"processing_ts:{user}:{image_path}")
-            redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", image_path)
-            redis.set(f"error:{user}:{image_path}", error_msg)
+            redis.delete(f"processing_ts:{user}:{orig_image_path}")
+            redis.srem(f"{PROCESSING_SET_PREFIX}:{user}", orig_image_path)
+            redis.set(f"error:{user}:{orig_image_path}", error_msg)
 
             # 重試一次
-            if not redis.get(f"retry:{user}:{image_path}"):
+            if not redis.get(f"retry:{user}:{orig_image_path}"):
                 print(f"🔄 Requeueing {image_path} for user {user} for retry")
-                redis.set(f"retry:{user}:{image_path}", "1")
+                redis.set(f"retry:{user}:{orig_image_path}", "1")
                 redis.lpush(f"{QUEUE_PREFIX}:{user}", image_path)
             else:
                 print(f"❌ Failed to process {image_path} for user {user} after retry")
