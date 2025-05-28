@@ -42,7 +42,7 @@ const LoginPage = () => {
     
     try {
       const creds = await AuthService.login(username, password);
-      login(creds);
+      login({ ...creds, username });
       navigate('/');
     } catch (err) {
       console.error('Login error:', err);

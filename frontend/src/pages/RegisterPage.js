@@ -16,7 +16,6 @@ import {
 } from '@mui/material';
 import {
   Person as PersonIcon,
-  Email as EmailIcon,
   Lock as LockIcon,
   Visibility,
   VisibilityOff,
@@ -26,7 +25,6 @@ import AuthService from '../services/AuthService';
 
 const RegisterPage = () => {
     const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
@@ -136,25 +134,6 @@ const RegisterPage = () => {
 
             <TextField
               fullWidth
-              label="Email (Optional)"
-                            type="email"
-              variant="outlined"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-              sx={{ mb: 3 }}
-              disabled={loading}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <EmailIcon color="action" />
-                  </InputAdornment>
-                ),
-              }}
-              helperText="This field is for display only, not sent to backend"
-            />
-
-            <TextField
-              fullWidth
               label="Password"
               type={showPassword ? 'text' : 'password'}
               variant="outlined"
@@ -219,11 +198,7 @@ const RegisterPage = () => {
             )}
 
             {success && (
-              <Alert 
-                severity="success" 
-                sx={{ mb: 3 }}
-                icon={<CheckCircleIcon />}
-              >
+              <Alert severity="success" sx={{ mb: 3 }} icon={<CheckCircleIcon />}>
                 {success}
               </Alert>
             )}
@@ -233,23 +208,19 @@ const RegisterPage = () => {
               fullWidth
               variant="contained"
               size="large"
-              disabled={loading || !!success}
+              disabled={loading}
               sx={{
                 py: 1.5,
                 fontSize: '1.1rem',
                 fontWeight: 600,
-                background: success 
-                  ? 'linear-gradient(45deg, #4caf50, #45a049)'
-                  : 'linear-gradient(45deg, #764ba2, #667eea)',
+                background: 'linear-gradient(45deg, #764ba2, #667eea)',
                 '&:hover': {
-                  background: success
-                    ? 'linear-gradient(45deg, #4caf50, #45a049)'
-                    : 'linear-gradient(45deg, #6a4190, #5a6fd8)',
+                  background: 'linear-gradient(45deg, #6a4190, #5a6fd8)',
                 },
                 mb: 3,
               }}
             >
-              {loading ? 'Registering...' : success ? 'Registration Successful!' : 'Register'}
+              {loading ? 'Creating Account...' : 'Create Account'}
             </Button>
 
             <Box sx={{ textAlign: 'center' }}>
@@ -267,7 +238,7 @@ const RegisterPage = () => {
                     },
                   }}
                 >
-                  Login now
+                  Login here
                 </MuiLink>
               </Typography>
             </Box>
@@ -275,7 +246,7 @@ const RegisterPage = () => {
         </Paper>
       </Container>
     </Box>
-    );
+  );
 };
 
 export default RegisterPage; 

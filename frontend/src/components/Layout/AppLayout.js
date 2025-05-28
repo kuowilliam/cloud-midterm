@@ -99,7 +99,7 @@ export default function AppLayout({ children }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, username, logout } = useAuth();
 
   const handleMenuOpen = (e) => setAnchorEl(e.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
@@ -204,6 +204,19 @@ export default function AppLayout({ children }) {
             >
               RAG Image Search System
           </Typography>
+
+          {isAuthenticated && username && (
+            <Typography 
+              variant="body1" 
+              sx={{ 
+                mr: 2,
+                fontWeight: 500,
+                color: 'inherit'
+              }}
+            >
+              welcome, {username}
+            </Typography>
+          )}
 
           <Button
             color="inherit"
