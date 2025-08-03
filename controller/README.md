@@ -1,20 +1,19 @@
 # Image Embedding System - API Documentation
 
-## 共通設定
-- **Base URL**：`http://<controller-ip>:8000`
-- **資料格式**：所有 Request 和 Response 使用 `JSON`
-- **CORS**：已開啟，任何來源都可直接呼叫
-- **認證**：除了註冊和登入外，所有API都需要JWT認證
+## Common Settings
+- **Data Format**: All Requests and Responses use `JSON`
+- **CORS**: Enabled, any origin can call directly
+- **Authentication**: All APIs require JWT authentication except for signup and login
 
 ---
 
-## 認證相關
+## Authentication
 
-### 1. 註冊新使用者
+### 1. Register New User
 ### `POST /signup`
-註冊新使用者帳號。
+Register a new user account.
 
-- **Request Payload**（JSON）：
+- **Request Payload** (JSON):
 ```json
 {
   "username": "user1",
@@ -22,26 +21,22 @@
 }
 ```
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "message": "Signup successful"
 }
 ```
 
-### 2. 登入系統
+### 2. Login System
 ### `POST /login`
-登入並取得JWT令牌用於後續API呼叫。
+Login and obtain JWT token for subsequent API calls.
 
-- **Request Payload**（JSON）：
-```json
-{
-  "username": "user1",
-  "password": "your_password"
-}
-```
+- **Request Payload** (Form Data):
+  - `username`: Username
+  - `password`: Password
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -51,19 +46,19 @@
 
 ---
 
-## 上傳功能
+## Upload Functions
 
-### 3. 上傳壓縮檔並排入任務
+### 3. Upload ZIP File and Queue Tasks
 ### `POST /upload`
-上傳一個 **zip 檔案**，系統會自動解壓並把圖片排入該使用者的專屬任務佇列。
+Upload a **ZIP file**, the system will automatically extract and queue images to the user's dedicated task queue.
 
-- **Request Header**：
+- **Request Header**:
   - `Authorization: Bearer <your_token>`
 
-- **Request Payload**（Form Data）：
-  - `zip_file`：上傳的 ZIP 檔案，內含圖片（支援 `.jpg`, `.jpeg`, `.png`, `.heic`）
+- **Request Payload** (Form Data):
+  - `zip_file`: Uploaded ZIP file containing images (supports `.jpg`, `.jpeg`, `.png`, `.heic`)
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "message": "Uploaded and queued 5 images.",
@@ -71,17 +66,17 @@
 }
 ```
 
-### 4. 上傳PDF文件或圖像ZIP
+### 4. Upload PDF Document or Image ZIP
 ### `POST /upload/pdf`
-上傳PDF或圖像ZIP，系統會轉換為圖像並排入該使用者的專屬任務佇列。
+Upload PDF or image ZIP, the system will convert to images and queue to the user's dedicated task queue.
 
-- **Request Header**：
+- **Request Header**:
   - `Authorization: Bearer <your_token>`
 
-- **Request Payload**（Form Data）：
-  - `upload_file`：上傳的PDF檔或ZIP檔案
+- **Request Payload** (Form Data):
+  - `upload_file`: Uploaded PDF file or ZIP file
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "message": "Processed 3 pages from PDF.",
@@ -91,21 +86,21 @@
 
 ---
 
-## 搜尋功能
+## Search Functions
 
-### 5. 搜尋相似圖片
+### 5. Search Similar Images
 ### `POST /search`
-輸入文字（Caption）或上傳圖片，系統用向量比對找出當前使用者空間中最相近的圖片。
+Enter text (caption) or upload an image, the system uses vector comparison to find the most similar images in the current user's space.
 
-- **Request Header**：
+- **Request Header**:
   - `Authorization: Bearer <your_token>`
 
-- **Request Payload**（Form Data）：
-  - `query`：文字描述（可選）
-  - `image`：上傳的圖片文件（可選）
-  - `top_k`：要返回的結果數量（選填）
+- **Request Payload** (Form Data):
+  - `query`: Text description (optional)
+  - `image`: Uploaded image file (optional)
+  - `top_k`: Number of results to return (optional, default: 5)
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "results": [
@@ -119,22 +114,18 @@
 }
 ```
 
-### 6. PDF內容搜尋
+### 6. PDF Content Search
 ### `POST /search/pdf`
-搜尋使用者上傳的PDF圖像內容。
+Search image content from user-uploaded PDFs.
 
-- **Request Header**：
+- **Request Header**:
   - `Authorization: Bearer <your_token>`
 
-- **Request Payload**（JSON）：
-```json
-{
-  "query": "your search query",
-  "top_k": 1
-}
-```
+- **Request Payload** (Form Data):
+  - `query`: Search query
+  - `top_k`: Number of results (optional, default: 1)
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "query": "your search query",
@@ -143,22 +134,22 @@
     "similarity": 0.85,
     "image_url": "/image/uploads/user1/pdfs/document_page_001.jpg"
   },
-  "gemini_answer": "具體回答您的問題..."
+  "gemini_answer": "Specific answer to your question..."
 }
 ```
 
 ---
 
-## 系統管理
+## System Management
 
-### 7. 查詢系統當前狀態
+### 7. Query System Current Status
 ### `GET /status`
-取得目前使用者的任務排隊、處理、完成的狀態。
+Get the current user's task queue, processing, and completion status.
 
-- **Request Header**：
+- **Request Header**:
   - `Authorization: Bearer <your_token>`
 
-- **Response Payload**：
+- **Response Payload** (Server-Sent Events):
 ```json
 {
   "queue": 10,
@@ -175,46 +166,46 @@
 }
 ```
 
-### 8. 刪除排隊中的任務
+### 8. Delete Queued Task
 ### `DELETE /queue/{item}`
-從使用者的Redis佇列中刪除一個等待中的圖片，不再處理。
+Delete a waiting image from the user's Redis queue, no longer processing.
 
-- **Request Header**：
+- **Request Header**:
   - `Authorization: Bearer <your_token>`
 
-- **Response Payload**（成功）：
+- **Response Payload** (Success):
 ```json
 {
   "message": "Removed 1 occurrence(s) of uploads/user1/image1.jpg from queue."
 }
 ```
 
-### 9. 列出已完成的圖片
+### 9. List Completed Images
 ### `GET /done`
-列出當前使用者所有已處理完成的圖片路徑。
+List all processed image paths for the current user.
 
-- **Request Header**：
+- **Request Header**:
   - `Authorization: Bearer <your_token>`
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "done_images": ["uploads/user1/image1.jpg", "uploads/user1/image2.jpg"]
 }
 ```
 
-### 10. 重置系統
+### 10. Reset System
 ### `POST /reset`
-清空當前使用者的系統資料，包括：
-- 刪除用戶的FAISS向量索引
-- 清空用戶的metadata
-- 刪除用戶的上傳資料夾內容
-- 清空用戶的Redis佇列、處理中、完成、錯誤、重試紀錄
+Clear current user's system data, including:
+- Delete user's FAISS vector index
+- Clear user's metadata
+- Delete user's upload folder contents
+- Clear user's Redis queue, processing, done, errors, retry records
 
-- **Request Header**：
+- **Request Header**:
   - `Authorization: Bearer <your_token>`
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "message": "Reset completed for user user1."
@@ -223,28 +214,28 @@
 
 ---
 
-## 其他功能
+## Other Functions
 
-### 11. 取得圖片檔案
+### 11. Get Image File
 ### `GET /image/{path}`
-直接下載或顯示一張圖片。
+Directly download or display an image.
 
-- **Request Payload**：無（透過 URL 傳 `path`）
+- **Request Payload**: None (pass `path` via URL)
 
-- **Response Payload**（成功）：直接回傳圖片檔案（MIME: `image/jpeg` 或 `image/png`）
+- **Response Payload** (Success): Directly return image file (MIME: `image/jpeg` or `image/png`)
 
-- **Response Payload**（失敗）：
+- **Response Payload** (Failure):
 ```json
 {
   "detail": "Image not found"
 }
 ```
 
-### 12. 監控Worker狀態
+### 12. Monitor Worker Status
 ### `GET /monitor/worker`
-監控所有Worker節點的狀態。
+Monitor status of all Worker nodes.
 
-- **Response Payload**：
+- **Response Payload** (Server-Sent Events):
 ```json
 {
   "worker1": {"status": "health", "metrics": {"cpu": 35.2, "mem": 68.7, "ts": 1687426502}},
@@ -253,11 +244,11 @@
 }
 ```
 
-### 13. 監控系統事件
+### 13. Monitor System Events
 ### `GET /monitor/events`
-監控系統事件（Worker死亡、任務超時等）。
+Monitor system events (Worker death, task timeout, etc.).
 
-- **Response Payload**：
+- **Response Payload** (Server-Sent Events):
 ```json
 [
   {"ts": 1687426502, "type": "worker_dead", "worker": "worker3", "requeued": ["uploads/user1/image1.jpg"]},
@@ -265,25 +256,14 @@
 ]
 ```
 
-### 14. 重置監控事件
+### 14. Reset Monitor Events
 ### `POST /monitor/events/reset`
-清空監控事件記錄。
+Clear monitor event records.
 
-- **Response Payload**：
+- **Response Payload**:
 ```json
 {
   "message": "Monitor events reset successfully."
 }
 ```
-
----
-
-# 📌 注意事項
-- **認證要求**：除了 `/signup` 和 `/login` 外，所有API都要求在Header中提供JWT令牌。
-- **多使用者隔離**：每個使用者擁有獨立的任務佇列、處理集合、索引和上傳空間。
-- **搜尋功能**：必須在使用者已經有訓練過的索引文件後才能正常使用。
-- **圖片路徑**：傳給 `/image/{path}` 時，要確保是從 `/status` 或 `/search` 回傳的 `image_path`。
-- **刪除任務**：只能刪除「排隊中」的，不能刪除已經被 worker 拿去處理的。
-
----
 
