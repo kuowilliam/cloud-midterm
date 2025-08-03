@@ -1,4 +1,4 @@
-# cloud-midterm
+# Distributed Computing System
 ## model structure
 docker-compose.yaml config five docker container including controller, worker1, worker2, worker3, redis 
 ```sh
