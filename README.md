@@ -29,8 +29,3 @@ checking container
 ```
 docker-compose logs
 ```
-
-## Testing with fastapi
-```
-http://127.0.0.1:8000/docs
-```
